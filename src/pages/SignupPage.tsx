@@ -1,5 +1,175 @@
+import { useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { getAuthErrorMessage, signup } from "../lib/auth";
+import { createUserProfile } from "../lib/firestore";
+
 function SignupPage() {
-  return <div>Signup Page</div>;
+  const navigate = useNavigate();
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+
+    if (!fullName.trim()) {
+      setError("Enter your full name.");
+      return;
+    }
+
+    if (!email.trim()) {
+      setError("Enter your email address.");
+      return;
+    }
+
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const credential = await signup(email.trim(), password, fullName.trim());
+
+      await createUserProfile({
+        uid: credential.user.uid,
+        fullName: fullName.trim(),
+        email: credential.user.email ?? email.trim(),
+        plan: "free",
+        role: "member",
+      });
+
+      navigate("/dashboard");
+    } catch (signupError) {
+      setError(getAuthErrorMessage(signupError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <section style={{ maxWidth: "520px", margin: "0 auto" }}>
+      <h1>Signup</h1>
+      <p>Create your account to access your dashboard and future member features.</p>
+
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "grid",
+          gap: "1rem",
+          padding: "1.5rem",
+          border: "1px solid #d0d5dd",
+          borderRadius: "16px",
+          backgroundColor: "#f8fafc",
+        }}
+      >
+        <label style={{ display: "grid", gap: "0.4rem" }}>
+          <span style={{ color: "#344054", fontWeight: 600 }}>Full name</span>
+          <input
+            type="text"
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+            placeholder="Jane Smith"
+            autoComplete="name"
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: "0.4rem" }}>
+          <span style={{ color: "#344054", fontWeight: 600 }}>Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: "0.4rem" }}>
+          <span style={{ color: "#344054", fontWeight: 600 }}>Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="At least 6 characters"
+            autoComplete="new-password"
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: "0.4rem" }}>
+          <span style={{ color: "#344054", fontWeight: 600 }}>Confirm password</span>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            placeholder="Re-enter your password"
+            autoComplete="new-password"
+            style={inputStyle}
+          />
+        </label>
+
+        {error ? (
+          <p
+            style={{
+              margin: 0,
+              padding: "0.85rem 1rem",
+              borderRadius: "12px",
+              backgroundColor: "#fef3f2",
+              color: "#b42318",
+            }}
+          >
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          style={{
+            border: 0,
+            borderRadius: "12px",
+            padding: "0.95rem 1rem",
+            backgroundColor: isSubmitting ? "#98a2b3" : "#101828",
+            color: "#ffffff",
+            fontWeight: 700,
+            cursor: isSubmitting ? "not-allowed" : "pointer",
+          }}
+        >
+          {isSubmitting ? "Creating account..." : "Create account"}
+        </button>
+
+        <p style={{ margin: 0 }}>
+          Already have an account?{" "}
+          <Link to="/login" style={{ color: "#101828", fontWeight: 700 }}>
+            Log in
+          </Link>
+        </p>
+      </form>
+    </section>
+  );
 }
+
+const inputStyle = {
+  width: "100%",
+  padding: "0.85rem 0.9rem",
+  borderRadius: "12px",
+  border: "1px solid #d0d5dd",
+  backgroundColor: "#ffffff",
+  fontSize: "1rem",
+} satisfies CSSProperties;
 
 export default SignupPage;
