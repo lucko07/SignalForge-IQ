@@ -1,0 +1,16 @@
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: system-ui, Arial, sans-serif;
+}
+
+body {
+  background: #ffffff;
+  color: #111;
+}
+
+main {
+  max-width: 1100px;
+  margin: auto;
+}
