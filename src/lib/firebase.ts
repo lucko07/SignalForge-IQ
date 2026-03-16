@@ -5,12 +5,12 @@ import { getFunctions } from "firebase/functions";
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyAzE7Z_RnURO7gNBtNQEaFaFWA7X0V-pqI",
-  authDomain: "signalforge-iq-3ff7f.firebaseapp.com",
-  projectId: "signalforge-iq-3ff7f",
-  storageBucket: "signalforge-iq-3ff7f.firebasestorage.app",
-  messagingSenderId: "1090367706100",
-  appId: "1:1090367706100:web:d0272d47268274188bdfa1"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase
