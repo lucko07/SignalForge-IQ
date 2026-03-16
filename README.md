@@ -1,73 +1,173 @@
-# React + TypeScript + Vite
+# SignalForge IQ
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SignalForge IQ is a React + Vite + TypeScript + Firebase application with public marketing pages, Firebase Authentication, a protected dashboard, and Firestore-backed trading signals.
 
-Currently, two official plugins are available:
+## Frontend
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Run the app: `npm run dev`
+- Production build: `npm run build`
 
-## React Compiler
+## Signal Ingestion Webhook
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The project includes a Firebase Cloud Functions 2nd gen HTTP endpoint for automatic signal ingestion from TradingView alerts, webhook relays, or a future Python strategy engine.
 
-## Expanding the ESLint configuration
+### Endpoint
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+After deployment, the endpoint will be exposed as:
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+`https://<region>-<project-id>.cloudfunctions.net/ingestSignal`
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+If you deploy with the default project in this repo, the project id is `signalforge-iq-3ff7f`.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Authentication
+
+Every request must include a shared secret.
+
+Supported options:
+
+- Request header: `x-signal-secret: <your-secret>`
+- JSON body: `"secret": "<your-secret>"`
+
+The function compares the provided value against the Firebase Functions secret:
+
+`SIGNAL_INGEST_SECRET`
+
+Unauthorized requests return `401`.
+
+### Expected JSON Payload
+
+Required fields:
+
+- `symbol`
+- `assetType`
+- `direction`
+- `entry`
+- `stopLoss`
+- `target`
+- `thesis`
+- `status`
+
+Optional fields:
+
+- `source`
+- `timeframe`
+- `confidence`
+- `strategyName`
+
+Example payload:
+
+```json
+{
+  "symbol": "BTC",
+  "assetType": "crypto",
+  "direction": "LONG",
+  "entry": "42000",
+  "stopLoss": "41000",
+  "target": "45000",
+  "thesis": "Breakout above resistance",
+  "status": "ACTIVE",
+  "source": "tradingview",
+  "timeframe": "4H",
+  "confidence": "high",
+  "strategyName": "Breakout Engine v1"
+}
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Validation rules:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- all required fields must exist and be non-empty strings
+- `direction` must be `LONG` or `SHORT`
+- `status` must be `ACTIVE`, `CLOSED`, or `PENDING`
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Malformed requests return `400`.
+
+### Firestore Writes
+
+Valid signals are written server-side only using the Firebase Admin SDK.
+
+Default collection behavior:
+
+- `signals` when `AUTO_PUBLISH_SIGNALS = true`
+- `pendingSignals` when `AUTO_PUBLISH_SIGNALS = false`
+
+Server-generated fields:
+
+- `createdAt`
+- `source` defaults to `"webhook"` if omitted
+- `ingestionTimestamp`
+- `ingestedBy: "function"`
+
+### Local Function Files
+
+- [`functions/src/index.ts`](./functions/src/index.ts)
+- [`functions/src/signalIngestion.ts`](./functions/src/signalIngestion.ts)
+
+### Set the Shared Secret
+
+Install the Firebase CLI if needed, then set the function secret:
+
+```bash
+firebase functions:secrets:set SIGNAL_INGEST_SECRET
 ```
+
+### Deploy Functions
+
+Install dependencies in the functions workspace, then deploy:
+
+```bash
+cd functions
+npm install
+npm run build
+cd ..
+firebase deploy --only functions
+```
+
+### Test With curl
+
+```bash
+curl -X POST "https://us-central1-signalforge-iq-3ff7f.cloudfunctions.net/ingestSignal" \
+  -H "Content-Type: application/json" \
+  -H "x-signal-secret: YOUR_SECRET" \
+  -d '{
+    "symbol": "BTC",
+    "assetType": "crypto",
+    "direction": "LONG",
+    "entry": "42000",
+    "stopLoss": "41000",
+    "target": "45000",
+    "thesis": "Breakout above resistance",
+    "status": "ACTIVE"
+  }'
+```
+
+### Test With PowerShell
+
+```powershell
+$headers = @{
+  "Content-Type" = "application/json"
+  "x-signal-secret" = "YOUR_SECRET"
+}
+
+$body = @{
+  symbol = "BTC"
+  assetType = "crypto"
+  direction = "LONG"
+  entry = "42000"
+  stopLoss = "41000"
+  target = "45000"
+  thesis = "Breakout above resistance"
+  status = "ACTIVE"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "https://us-central1-signalforge-iq-3ff7f.cloudfunctions.net/ingestSignal" `
+  -Headers $headers `
+  -Body $body
+```
+
+## Notes
+
+- The ingestion flow does not expose admin credentials in frontend code.
+- The public frontend does not write webhook signals directly to Firestore.
+- Existing auth, routes, and dashboard signal loading remain separate from the webhook ingestion flow.

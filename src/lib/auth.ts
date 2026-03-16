@@ -4,6 +4,7 @@ import {
   updateProfile,
   signInWithEmailAndPassword,
   signOut,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import type { AuthError } from "firebase/auth";
 
@@ -29,6 +30,10 @@ export const logout = () => {
   return signOut(auth);
 };
 
+export const requestPasswordReset = (email: string) => {
+  return sendPasswordResetEmail(auth, email);
+};
+
 export const getAuthErrorMessage = (error: unknown) => {
   const code = (error as AuthError | undefined)?.code;
 
@@ -49,6 +54,8 @@ export const getAuthErrorMessage = (error: unknown) => {
       return "Too many attempts. Please wait and try again.";
     case "auth/network-request-failed":
       return "Network error. Check your connection and try again.";
+    case "auth/missing-email":
+      return "Enter your email address.";
     default:
       return "Something went wrong. Please try again.";
   }

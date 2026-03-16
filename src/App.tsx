@@ -12,6 +12,10 @@ import SignupPage from "./pages/SignupPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AdminSignalsPage from "./pages/AdminSignalsPage";
+import UpgradePage from "./pages/UpgradePage";
+import UpgradeSuccessPage from "./pages/UpgradeSuccessPage";
+import UpgradeCancelPage from "./pages/UpgradeCancelPage";
 
 function App() {
   return (
@@ -27,10 +31,42 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route
-          path="/dashboard"
+          path="/upgrade"
           element={
             <ProtectedRoute>
+              <UpgradePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upgrade/success"
+          element={
+            <ProtectedRoute>
+              <UpgradeSuccessPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upgrade/cancel"
+          element={
+            <ProtectedRoute>
+              <UpgradeCancelPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute requirePaidPlan>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/signals"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminSignalsPage />
             </ProtectedRoute>
           }
         />

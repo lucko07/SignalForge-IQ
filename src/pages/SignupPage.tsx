@@ -1,17 +1,21 @@
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getAuthErrorMessage, signup } from "../lib/auth";
 import { createUserProfile } from "../lib/firestore";
 
 function SignupPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const requestedPlan = searchParams.get("plan")?.trim().toLowerCase();
+  const requestedPlanLabel =
+    requestedPlan === "pro" || requestedPlan === "elite" ? requestedPlan : null;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,6 +66,12 @@ function SignupPage() {
     <section style={{ maxWidth: "520px", margin: "0 auto" }}>
       <h1>Signup</h1>
       <p>Create your account to access your dashboard and future member features.</p>
+      {requestedPlanLabel ? (
+        <p style={{ color: "#475467" }}>
+          Selected plan: <strong>{requestedPlanLabel}</strong>. Account creation still starts on
+          the free plan until checkout is connected.
+        </p>
+      ) : null}
 
       <form
         onSubmit={handleSubmit}
@@ -154,7 +164,10 @@ function SignupPage() {
 
         <p style={{ margin: 0 }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "#101828", fontWeight: 700 }}>
+          <Link
+            to={requestedPlanLabel ? `/login?plan=${requestedPlanLabel}` : "/login"}
+            style={{ color: "#101828", fontWeight: 700 }}
+          >
             Log in
           </Link>
         </p>

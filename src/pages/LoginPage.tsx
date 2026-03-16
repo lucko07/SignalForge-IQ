@@ -1,18 +1,23 @@
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getAuthErrorMessage, login } from "../lib/auth";
+import { getAuthErrorMessage, login, requestPasswordReset } from "../lib/auth";
 
 function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetError, setResetError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setResetMessage("");
+    setResetError("");
 
     if (!email.trim()) {
       setError("Enter your email address.");
@@ -33,6 +38,28 @@ function LoginPage() {
       setError(getAuthErrorMessage(loginError));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setResetMessage("");
+    setResetError("");
+    setError("");
+
+    if (!email.trim()) {
+      setResetError("Enter your email address first to reset your password.");
+      return;
+    }
+
+    setIsResettingPassword(true);
+
+    try {
+      await requestPasswordReset(email.trim());
+      setResetMessage("Password reset email sent. Check your inbox for the reset link.");
+    } catch (resetRequestError) {
+      setResetError(getAuthErrorMessage(resetRequestError));
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -76,6 +103,17 @@ function LoginPage() {
           />
         </label>
 
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={isResettingPassword}
+            style={textButtonStyle(isResettingPassword)}
+          >
+            {isResettingPassword ? "Sending reset..." : "Forgot password?"}
+          </button>
+        </div>
+
         {error ? (
           <p
             style={{
@@ -87,6 +125,34 @@ function LoginPage() {
             }}
           >
             {error}
+          </p>
+        ) : null}
+
+        {resetError ? (
+          <p
+            style={{
+              margin: 0,
+              padding: "0.85rem 1rem",
+              borderRadius: "12px",
+              backgroundColor: "#fef3f2",
+              color: "#b42318",
+            }}
+          >
+            {resetError}
+          </p>
+        ) : null}
+
+        {resetMessage ? (
+          <p
+            style={{
+              margin: 0,
+              padding: "0.85rem 1rem",
+              borderRadius: "12px",
+              backgroundColor: "#ecfdf3",
+              color: "#027a48",
+            }}
+          >
+            {resetMessage}
           </p>
         ) : null}
 
@@ -125,5 +191,14 @@ const inputStyle = {
   backgroundColor: "#ffffff",
   fontSize: "1rem",
 } satisfies CSSProperties;
+
+const textButtonStyle = (isDisabled: boolean): CSSProperties => ({
+  border: 0,
+  backgroundColor: "transparent",
+  padding: 0,
+  color: isDisabled ? "#98a2b3" : "#101828",
+  fontWeight: 700,
+  cursor: isDisabled ? "not-allowed" : "pointer",
+});
 
 export default LoginPage;
