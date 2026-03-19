@@ -77,8 +77,8 @@ const membershipCards = [
     description: "Pro and Elite memberships unlock the protected dashboard and broader signal access.",
   },
   {
-    title: "Admin",
-    description: "Admin users handle moderation, approvals, and internal system workflows.",
+    title: "Growing With Your Account",
+    description: "As your membership grows, your access expands into deeper tools, richer signal visibility, and a more complete member experience.",
   },
 ] as const;
 
@@ -242,11 +242,11 @@ function EducationPage() {
         <div style={twoColumnSectionStyle}>
           <div style={sectionContentStyle}>
             <p style={sectionEyebrowStyle}>Access Tiers</p>
-            <h2 style={sectionTitleStyle}>Membership Guidance</h2>
-            <p style={sectionDescriptionStyle}>
-              SignalForge IQ is structured so new users can explore publicly while paid
-              members and admins have the right tools for their roles.
-            </p>
+          <h2 style={sectionTitleStyle}>Membership Guidance</h2>
+          <p style={sectionDescriptionStyle}>
+            SignalForge IQ is structured so new users can explore publicly while paid
+            members unlock a deeper product experience as their needs grow.
+          </p>
 
             <div style={membershipGridStyle}>
               {membershipCards.map((item) => (

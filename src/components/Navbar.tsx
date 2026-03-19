@@ -72,7 +72,7 @@ function Navbar() {
 
   const isSignedIn = !!currentUser;
   const showAdminLink = isSignedIn && role === "admin";
-  const accountLabel = role === "admin" ? "Admin" : capitalizePlan(plan);
+  const accountLabel = role === "admin" ? "Account" : capitalizePlan(plan);
 
   return (
     <header
@@ -141,7 +141,7 @@ function Navbar() {
                 </NavLink>
                 {showAdminLink ? (
                   <NavLink to="/admin/signals" style={({ isActive }) => navLinkStyle(isActive)}>
-                    Admin
+                    Review
                   </NavLink>
                 ) : null}
               </>

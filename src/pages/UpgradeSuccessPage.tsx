@@ -57,8 +57,8 @@ function UpgradeSuccessPage() {
       <div style={heroCardStyle}>
         <h1 style={{ margin: 0 }}>Checkout complete</h1>
         <p style={{ margin: 0, color: "#475467" }}>
-          Stripe sent you back successfully. Your access updates as soon as the webhook
-          writes the new plan to Firestore.
+          Your payment was completed successfully. Your access updates as soon as the
+          subscription confirmation finishes syncing.
         </p>
       </div>
 
@@ -80,7 +80,7 @@ function UpgradeSuccessPage() {
         ) : (
           <div style={noticeBannerStyle}>
             Payment was successful, but plan access is still syncing. This usually resolves
-            within a few seconds after the Stripe webhook runs.
+            within a few seconds after confirmation is processed.
           </div>
         )}
 

@@ -286,10 +286,10 @@ function AdminSignalsPage() {
         }}
       >
         <div>
-          <h1 style={{ margin: "0 0 0.4rem" }}>Admin Signal Review</h1>
+          <h1 style={{ margin: "0 0 0.4rem" }}>Signal Review</h1>
           <p style={{ margin: 0, color: "#475467" }}>
-            Review incoming webhook signals from `pendingSignals`, edit them if needed,
-            then approve, reject, and manage approved signal lifecycle statuses.
+            Review incoming signals, edit them if needed, then approve, reject,
+            and manage their lifecycle statuses.
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -318,8 +318,8 @@ function AdminSignalsPage() {
         <div style={emptyStateStyle}>
           <h2 style={{ margin: 0, color: "#101828" }}>No pending signals</h2>
           <p style={{ margin: 0, color: "#475467" }}>
-            New webhook submissions will land here for review before they can be
-            published to the live `signals` collection.
+            New signals will appear here for review before they are published to
+            the live feed.
           </p>
         </div>
       ) : null}
@@ -369,7 +369,7 @@ function AdminSignalsPage() {
                   <ReviewField label="Status" value={signal.status} />
                   <ReviewField label="Review Status" value={signal.reviewStatus} />
                   <ReviewField label="Created At" value={formatAdminDate(signal.createdAt)} />
-                  <ReviewField label="Source" value={signal.source ?? "webhook"} />
+                  <ReviewField label="Source" value={formatVisibleSource(signal.source)} />
                 </div>
 
                 <div style={auditBlockStyle}>
@@ -569,7 +569,7 @@ function AdminSignalsPage() {
       >
         <h2 style={{ margin: 0, color: "#101828" }}>Approved Signal Lifecycle</h2>
         <p style={{ margin: 0, color: "#475467" }}>
-          Manage the status of approved signals in the live `signals` collection.
+          Manage the status of approved signals in the live feed.
         </p>
       </div>
 
@@ -752,6 +752,20 @@ function ReviewField({ label, value }: ReviewFieldProps) {
       <strong style={{ color: "#101828" }}>{value}</strong>
     </div>
   );
+}
+
+function formatVisibleSource(source?: string) {
+  const normalizedSource = source?.trim();
+
+  if (!normalizedSource) {
+    return "Automated";
+  }
+
+  if (normalizedSource.toLowerCase() === "webhook") {
+    return "Automated";
+  }
+
+  return normalizedSource;
 }
 
 const getFirebaseErrorMessage = (error: unknown, fallbackMessage: string) => {

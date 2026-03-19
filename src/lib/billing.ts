@@ -29,17 +29,19 @@ const createBillingPortalSessionCallable = httpsCallable<
   CreateBillingPortalSessionResponse
 >(functions, "createBillingPortalSession");
 
+export const isSecureCheckoutReady = Boolean(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+
 export const startStripeCheckout = async (plan: "pro" | "elite") => {
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
   if (!publishableKey) {
-    throw new Error("Missing Stripe publishable key.");
+    throw new Error("Secure checkout is temporarily unavailable. Please try again later.");
   }
 
   const stripe = await loadStripe(publishableKey);
 
   if (!stripe) {
-    throw new Error("Unable to initialize Stripe Checkout.");
+    throw new Error("Secure checkout is temporarily unavailable. Please try again later.");
   }
 
   const response = await createCheckoutSessionCallable({
@@ -65,7 +67,7 @@ export const openBillingPortal = async () => {
   });
 
   if (!response.data.url) {
-    throw new Error("Billing portal session was not created.");
+    throw new Error("Unable to open billing management right now.");
   }
 
   window.location.assign(response.data.url);

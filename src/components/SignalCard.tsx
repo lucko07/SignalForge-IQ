@@ -7,7 +7,7 @@ type SignalCardProps = {
 function SignalCard({ signal }: SignalCardProps) {
   const createdAtLabel = formatSignalDate(signal.createdAt);
   const closedAtLabel = formatSignalDate(signal.closedAt);
-  const sourceLabel = signal.source?.trim();
+  const sourceLabel = formatSourceLabel(signal.source);
   const pnlLabel =
     typeof signal.pnlPercent === "number"
       ? `${signal.pnlPercent > 0 ? "+" : ""}${signal.pnlPercent.toFixed(2)}%`
@@ -171,6 +171,20 @@ function MetadataPill({ label }: MetadataPillProps) {
       {label}
     </span>
   );
+}
+
+function formatSourceLabel(source?: string) {
+  const normalizedSource = source?.trim();
+
+  if (!normalizedSource) {
+    return "";
+  }
+
+  if (normalizedSource.toLowerCase() === "webhook") {
+    return "Automated";
+  }
+
+  return normalizedSource;
 }
 
 const formatSignalDate = (value: unknown) => {

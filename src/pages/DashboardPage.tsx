@@ -101,7 +101,7 @@ function DashboardPage() {
       undefined,
       () => {
         setLiveSignals([]);
-        setSignalsError("Unable to load live Firestore signals right now.");
+        setSignalsError("Unable to load signals right now. Please try again shortly.");
         setIsSignalsLoading(false);
       }
     );
@@ -203,11 +203,11 @@ function DashboardPage() {
           <strong>Plan:</strong> {isProfileLoading ? "Loading..." : profile.plan}
         </p>
         <p style={{ margin: "0.5rem 0 1.25rem" }}>
-          <strong>Role:</strong> {isProfileLoading ? "Loading..." : profile.role}
+          <strong>Access:</strong> {isProfileLoading ? "Loading..." : (profile.role === "admin" ? "Full" : "Member")}
         </p>
         {!isProfileLoading ? (
           <p style={{ margin: "0 0 1.25rem", color: "#475467" }}>
-            Access tier: {profile.role === "admin" ? "Full admin access" : `${profile.plan} member access`}
+            {profile.role === "admin" ? "All features are available on this account." : `${profile.plan} member access`}
           </p>
         ) : null}
         <button
@@ -246,7 +246,7 @@ function DashboardPage() {
         <div>
           <h2 style={{ margin: 0, color: "#101828" }}>Billing</h2>
           <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-            Your plan access and Stripe billing state are shown here.
+            Your plan access and billing status are shown here.
           </p>
         </div>
 
@@ -258,16 +258,16 @@ function DashboardPage() {
             value={isProfileLoading ? "Loading..." : (hasPaidBillingAccess ? "Active" : "Upgrade required")}
           />
           <StatCard
-            label="Stripe Customer"
-            value={isProfileLoading ? "Loading..." : (profile.stripeCustomerId ? shortenStripeId(profile.stripeCustomerId) : "Not linked")}
+            label="Customer ID"
+            value={isProfileLoading ? "Loading..." : (profile.stripeCustomerId ? "Connected" : "Not linked")}
           />
         </div>
 
         {!isAdminUser && isStripeManagedUser ? (
           <div style={billingNoticeStyle}>
-            <strong>Stripe-managed subscription.</strong>
+            <strong>Subscription Management</strong>
             <p style={{ margin: 0 }}>
-              Update payment methods, cancel your subscription, or manage billing details in the Stripe Billing Portal.
+              Manage your payment method, update your plan, or cancel your subscription.
             </p>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
               <button
@@ -360,7 +360,7 @@ function DashboardPage() {
           <div>
             <h2 style={{ margin: 0, color: "#101828" }}>Trading Signals</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-              Live signals from the `signals` Firestore collection are shown first.
+              Live signals are shown here first.
             </p>
           </div>
           {!isSignalsLoading && liveSignals.length > 0 ? (
@@ -393,11 +393,9 @@ function DashboardPage() {
               color: "#b54708",
             }}
           >
-            <strong>No live Firestore signals yet.</strong>
+            <strong>No live signals yet.</strong>
             <p style={{ margin: 0 }}>
-              The system is connected and ready for incoming signals from your
-              ingestion workflow. Sample cards are shown below only until the first
-              real signal arrives.
+              The system is ready. Signals will appear here as they become available.
             </p>
             {signalsError ? <p style={{ margin: 0 }}>{signalsError}</p> : null}
           </div>
@@ -553,14 +551,6 @@ const secondaryLinkStyle = {
   fontWeight: 700,
 };
 
-const shortenStripeId = (value: string) => {
-  if (value.length <= 12) {
-    return value;
-  }
-
-  return `${value.slice(0, 7)}...${value.slice(-4)}`;
-};
-
 const formatSubscriptionEndDate = (value?: Timestamp | null) => {
   if (!value) {
     return null;
@@ -591,8 +581,8 @@ const getAccountStatusBannerState = (
 
   if (profile.role === "admin") {
     return {
-      tone: "admin",
-      message: "Admin access is active. Billing restrictions do not affect admin tools.",
+      tone: "success",
+      message: "Your account has full access.",
     };
   }
 

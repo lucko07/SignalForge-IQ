@@ -61,8 +61,7 @@ function SignalsPage() {
         </p>
         <h1 style={{ margin: "0 0 1rem", fontSize: "2.5rem" }}>Signals</h1>
         <p style={{ margin: 0, maxWidth: "720px" }}>
-          A public look at a few recent signals from Firestore. Members get the full
-          protected dashboard experience with the live feed and account access.
+          A preview of recent trading signals. Members unlock full access to the live dashboard.
         </p>
       </div>
 
@@ -95,11 +94,9 @@ function SignalsPage() {
               backgroundColor: "#ffffff",
             }}
           >
-            <h2 style={{ margin: 0, color: "#101828" }}>No public signals yet</h2>
+            <h2 style={{ margin: 0, color: "#101828" }}>No live signals yet.</h2>
             <p style={{ margin: 0, color: "#475467" }}>
-              The signal pipeline is ready and waiting for the first live entries to
-              arrive in Firestore. Create an account to be ready when the feed starts
-              updating.
+              The system is ready. Signals will appear here as they become available.
             </p>
             {loadError ? (
               <p style={{ margin: 0, color: "#b42318" }}>{loadError}</p>

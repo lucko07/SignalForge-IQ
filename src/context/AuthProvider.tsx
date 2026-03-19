@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import type { User } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { auth, hasRequiredFirebaseClientConfig } from "../lib/firebase";
 
 type AuthContextValue = {
   currentUser: User | null;
@@ -20,6 +20,12 @@ function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!hasRequiredFirebaseClientConfig) {
+      setCurrentUser(null);
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setLoading(false);

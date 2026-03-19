@@ -200,8 +200,7 @@ function PricingPage() {
       >
         <h2 style={{ margin: 0, color: "#101828" }}>Access Rules</h2>
         <p style={{ margin: 0, color: "#475467" }}>
-          `free` users stay on public pages. `pro` and `elite` unlock the member
-          dashboard. `admin` users keep full access, including admin tools.
+          Free users can access public pages. Pro and Elite members unlock the full dashboard experience.
         </p>
       </div>
     </section>

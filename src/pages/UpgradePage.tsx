@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
-import { startStripeCheckout } from "../lib/billing";
+import { isSecureCheckoutReady, startStripeCheckout } from "../lib/billing";
 import { getUserProfile } from "../lib/firestore";
 import type { UserPlan } from "../lib/firestore";
 
@@ -74,7 +74,8 @@ function UpgradePage() {
 
   const isAlreadyOnRequestedPlan = currentPlan === requestedPlan;
   const isDowngradeBlocked = currentPlan === "elite" && requestedPlan === "pro";
-  const canCheckout = !isLoading && !isAlreadyOnRequestedPlan && !isDowngradeBlocked;
+  const canCheckout =
+    isSecureCheckoutReady && !isLoading && !isAlreadyOnRequestedPlan && !isDowngradeBlocked;
 
   const handleCheckout = async () => {
     setError("");
@@ -97,8 +98,7 @@ function UpgradePage() {
       <div style={heroCardStyle}>
         <h1 style={{ margin: 0 }}>Upgrade to {capitalizePlan(requestedPlan)}</h1>
         <p style={{ margin: 0, color: "#475467" }}>
-          Secure Stripe Checkout is ready. Your plan access will update automatically
-          after the Stripe webhook writes the new plan into Firestore.
+          Secure checkout is ready. Your access will update automatically after payment confirmation.
         </p>
       </div>
 
@@ -138,10 +138,15 @@ function UpgradePage() {
           </div>
         ) : null}
 
-        {!isAlreadyOnRequestedPlan && !isDowngradeBlocked ? (
+        {!isSecureCheckoutReady ? (
+          <div style={warningBannerStyle}>
+            Secure checkout is temporarily unavailable. Please try again later.
+          </div>
+        ) : null}
+
+        {!isAlreadyOnRequestedPlan && !isDowngradeBlocked && isSecureCheckoutReady ? (
           <div style={noticeBannerStyle}>
-            Clicking continue sends you to Stripe Checkout. Plan access updates when the
-            Stripe webhook confirms the subscription in Firestore.
+            Clicking continue takes you to secure checkout. Your access updates automatically after your subscription is confirmed.
           </div>
         ) : null}
 
@@ -154,7 +159,7 @@ function UpgradePage() {
             disabled={!canCheckout || isSubmitting}
             style={primaryButtonStyle(!canCheckout || isSubmitting)}
           >
-            {isSubmitting ? "Redirecting to Stripe..." : "Continue to checkout"}
+            {isSubmitting ? "Redirecting to secure checkout..." : "Continue to checkout"}
           </button>
           <Link to="/pricing" style={secondaryLinkStyle}>
             Back to pricing

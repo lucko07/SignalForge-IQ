@@ -29,7 +29,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "Are signals posted instantly?",
         answer:
-          "Signals may pass through an internal workflow before appearing live. That helps keep the feed organized and gives users a clearer view of what is pending review versus what is active.",
+          "Signals may pass through an internal review workflow before appearing live. That helps keep the feed organized and gives users a clearer view of what is pending review versus what is active.",
       },
       {
         question: "What do statuses like pending, active, and closed mean?",
@@ -45,7 +45,7 @@ const faqCategories: FaqCategory[] = [
   },
   {
     title: "Memberships",
-    description: "A quick overview of how Free, Pro, Elite, and Admin access are separated on the platform.",
+    description: "A quick overview of how Free, Pro, and Elite access are separated on the platform.",
     items: [
       {
         question: "What is included in the Free plan?",
@@ -63,11 +63,6 @@ const faqCategories: FaqCategory[] = [
           "Elite includes the protected dashboard and premium membership tier access, with room for future advanced member features as the platform expands.",
       },
       {
-        question: "Do admin users need a paid subscription?",
-        answer:
-          "No. Admin users keep full access to admin tools and moderation workflows without depending on Stripe-managed paid access.",
-      },
-      {
         question: "Can I upgrade later?",
         answer:
           "Yes. Free users can upgrade later, and Pro members can move to Elite when that higher tier fits their needs.",
@@ -81,12 +76,12 @@ const faqCategories: FaqCategory[] = [
       {
         question: "How does billing work?",
         answer:
-          "Paid memberships are managed through Stripe. When a subscription is active, your Firestore profile reflects the plan and billing state used by the app.",
+          "Paid memberships are managed through secure recurring billing. When a subscription is active, your account reflects the correct plan and billing status automatically.",
       },
       {
         question: "Can I cancel my subscription anytime?",
         answer:
-          "Yes. Stripe-managed subscriptions can be canceled from the billing portal. In most cases, cancellation is scheduled for the end of the current billing period.",
+          "Yes. Subscriptions can be canceled from the billing portal. In most cases, cancellation is scheduled for the end of the current billing period.",
       },
       {
         question: "What happens after I cancel?",
@@ -101,7 +96,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "Can I manage my payment method?",
         answer:
-          "Yes. Paid members can use the Stripe billing portal to review billing details, manage payment methods, and handle subscription changes.",
+          "Yes. Paid members can use the billing portal to review billing details, manage payment methods, and handle subscription changes.",
       },
     ],
   },
@@ -110,14 +105,14 @@ const faqCategories: FaqCategory[] = [
     description: "Common questions about protected pages, upgrades, payment issues, and account continuity.",
     items: [
       {
-        question: "Why can’t Free users access the protected dashboard?",
+        question: "Why can't Free users access the protected dashboard?",
         answer:
           "The protected dashboard is reserved for paid member access. Free users stay on public pages, while Pro and Elite unlock the member dashboard.",
       },
       {
         question: "What happens when I upgrade to Pro or Elite?",
         answer:
-          "After Stripe checkout completes and the billing profile syncs, your account plan updates in Firestore and access expands to the protected dashboard.",
+          "After checkout completes and your subscription is confirmed, your account plan updates and access expands to the protected dashboard.",
       },
       {
         question: "What happens if my payment fails?",

@@ -16,8 +16,43 @@ import AdminSignalsPage from "./pages/AdminSignalsPage";
 import UpgradePage from "./pages/UpgradePage";
 import UpgradeSuccessPage from "./pages/UpgradeSuccessPage";
 import UpgradeCancelPage from "./pages/UpgradeCancelPage";
+import { hasRequiredFirebaseClientConfig } from "./lib/firebase";
 
 function App() {
+  if (!hasRequiredFirebaseClientConfig) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "2rem",
+          backgroundColor: "#f8fafc",
+        }}
+      >
+        <section
+          style={{
+            width: "100%",
+            maxWidth: "640px",
+            display: "grid",
+            gap: "0.75rem",
+            padding: "1.5rem",
+            borderRadius: "20px",
+            border: "1px solid #d0d5dd",
+            backgroundColor: "#ffffff",
+            boxShadow: "0 10px 30px rgba(16, 24, 40, 0.05)",
+          }}
+        >
+          <h1 style={{ margin: 0, color: "#101828" }}>SignalForge IQ</h1>
+          <p style={{ margin: 0, color: "#475467", lineHeight: 1.7 }}>
+            The app is temporarily unavailable because setup is incomplete. Please
+            add the required client configuration and reload the page.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>
