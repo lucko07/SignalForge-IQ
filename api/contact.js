@@ -38,9 +38,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false });
   }
 
-  const emailSent = await sendContactEmail(sanitizedInput);
+  const emailSent = await sendSupportEmail(sanitizedInput);
 
   if (!emailSent) {
+    return res.status(500).json({ success: false });
+  }
+
+  const autoReplySent = await sendAutoReplyEmail(sanitizedInput);
+
+  if (!autoReplySent) {
     return res.status(500).json({ success: false });
   }
 
@@ -158,7 +164,43 @@ function isRateLimited(clientIp) {
   return false;
 }
 
-async function sendContactEmail(input) {
+async function sendSupportEmail(input) {
+  return sendEmail({
+    to: [MAIL_TO],
+    subject: "New Contact Form Message",
+    text: [
+      "Name:",
+      input.name,
+      "",
+      "Email:",
+      input.email,
+      "",
+      "Subject:",
+      input.subject,
+      "",
+      "Message:",
+      input.message,
+    ].join("\n"),
+  });
+}
+
+async function sendAutoReplyEmail(input) {
+  return sendEmail({
+    to: [input.email],
+    subject: "We received your message",
+    text: [
+      `Hi ${input.name},`,
+      "",
+      "Thanks for contacting SignalForge IQ.",
+      "",
+      "Our team has received your message and will get back to you shortly.",
+      "",
+      "- SignalForge Support",
+    ].join("\n"),
+  });
+}
+
+async function sendEmail({ to, subject, text }) {
   const response = await fetch(MAIL_SERVICE_URL, {
     method: "POST",
     headers: {
@@ -167,21 +209,9 @@ async function sendContactEmail(input) {
     },
     body: JSON.stringify({
       from: MAIL_FROM,
-      to: [MAIL_TO],
-      subject: "New Contact Form Message",
-      text: [
-        "Name:",
-        input.name,
-        "",
-        "Email:",
-        input.email,
-        "",
-        "Subject:",
-        input.subject,
-        "",
-        "Message:",
-        input.message,
-      ].join("\n"),
+      to,
+      subject,
+      text,
     }),
   });
 

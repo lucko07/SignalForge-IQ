@@ -1,3 +1,11 @@
+import { Link } from "react-router-dom";
+
+const footerLinks = [
+  { label: "Pricing", to: "/pricing" },
+  { label: "Signals", to: "/signals" },
+  { label: "Contact", to: "/contact" },
+] as const;
+
 function Footer() {
   return (
     <footer
@@ -20,10 +28,25 @@ function Footer() {
         }}
       >
         <p style={{ margin: 0, fontWeight: 600 }}>SignalForge IQ</p>
-        <p style={{ margin: 0 }}>Market education, signals, and account access.</p>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+          <p style={{ margin: 0 }}>Market education, signals, and account access.</p>
+          <nav aria-label="Footer" style={{ display: "flex", gap: "0.85rem", flexWrap: "wrap" }}>
+            {footerLinks.map((link) => (
+              <Link key={link.to} to={link.to} style={footerLinkStyle}>
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </div>
     </footer>
   );
 }
+
+const footerLinkStyle = {
+  color: "#475467",
+  textDecoration: "none",
+  fontWeight: 600,
+};
 
 export default Footer;
