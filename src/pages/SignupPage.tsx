@@ -69,7 +69,7 @@ function SignupPage() {
       {requestedPlanLabel ? (
         <p style={{ color: "#475467" }}>
           Selected plan: <strong>{requestedPlanLabel}</strong>. Account creation still starts on
-          the free plan until checkout is connected.
+          the Free plan until membership activation is completed.
         </p>
       ) : null}
 

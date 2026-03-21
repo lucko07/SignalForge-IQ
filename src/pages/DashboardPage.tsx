@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Timestamp } from "firebase/firestore";
 import SignalCard from "../components/SignalCard";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { logout } from "../lib/auth";
 import { openBillingPortal } from "../lib/billing";
 import {
@@ -54,6 +54,7 @@ function DashboardPage() {
   const [isPerformanceLoading, setIsPerformanceLoading] = useState(true);
   const [performanceError, setPerformanceError] = useState("");
   const [billingActionError, setBillingActionError] = useState("");
+  const [profileLoadError, setProfileLoadError] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -76,6 +77,11 @@ function DashboardPage() {
             cancelAtPeriodEnd: userProfile.cancelAtPeriodEnd,
             subscriptionEndsAt: userProfile.subscriptionEndsAt,
           });
+          setProfileLoadError("");
+        }
+      } catch {
+        if (isMounted) {
+          setProfileLoadError("We could not refresh your account details right now.");
         }
       } finally {
         if (isMounted) {
@@ -158,6 +164,7 @@ function DashboardPage() {
   const isStripeManagedUser = isStripeManagedPlan(profile);
   const hasPaidBillingAccess = hasActiveBillingAccess(profile as UserProfile);
   const accountStatusBanner = getAccountStatusBannerState(profile, isProfileLoading);
+  const membershipLabel = isAdminUser ? "Administrator" : `${capitalizePlan(profile.plan)} member`;
 
   const handleManageSubscription = async () => {
     setBillingActionError("");
@@ -203,11 +210,11 @@ function DashboardPage() {
           <strong>Plan:</strong> {isProfileLoading ? "Loading..." : profile.plan}
         </p>
         <p style={{ margin: "0.5rem 0 1.25rem" }}>
-          <strong>Access:</strong> {isProfileLoading ? "Loading..." : (profile.role === "admin" ? "Full" : "Member")}
+          <strong>Access:</strong> {isProfileLoading ? "Loading..." : membershipLabel}
         </p>
         {!isProfileLoading ? (
           <p style={{ margin: "0 0 1.25rem", color: "#475467" }}>
-            {profile.role === "admin" ? "All features are available on this account." : `${profile.plan} member access`}
+            {isAdminUser ? "You can manage member access and review signals from this account." : "Your membership and signal access are shown below."}
           </p>
         ) : null}
         <button
@@ -233,64 +240,109 @@ function DashboardPage() {
         <p style={{ margin: 0 }}>{accountStatusBanner.message}</p>
       </div>
 
-      <div
-        style={{
-          padding: "1.5rem",
-          border: "1px solid #d0d5dd",
-          borderRadius: "16px",
-          backgroundColor: "#f8fafc",
-          display: "grid",
-          gap: "1rem",
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0, color: "#101828" }}>Billing</h2>
-          <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-            Your plan access and billing status are shown here.
-          </p>
+      {profileLoadError ? (
+        <div style={accountStatusBannerStyle("neutral")}>
+          <strong style={{ fontSize: "1rem" }}>Account details</strong>
+          <p style={{ margin: 0 }}>{profileLoadError}</p>
         </div>
+      ) : null}
 
-        <div style={statsGridStyle}>
-          <StatCard label="Current Plan" value={isProfileLoading ? "Loading..." : (profile.currentPlan ?? profile.plan)} />
-          <StatCard label="Billing Status" value={isProfileLoading ? "Loading..." : (profile.billingStatus ?? "Not billed")} />
-          <StatCard
-            label="Billing Access"
-            value={isProfileLoading ? "Loading..." : (hasPaidBillingAccess ? "Active" : "Upgrade required")}
-          />
-          <StatCard
-            label="Customer ID"
-            value={isProfileLoading ? "Loading..." : (profile.stripeCustomerId ? "Connected" : "Not linked")}
-          />
-        </div>
-
-        {!isAdminUser && isStripeManagedUser ? (
-          <div style={billingNoticeStyle}>
-            <strong>Subscription Management</strong>
-            <p style={{ margin: 0 }}>
-              Manage your payment method, update your plan, or cancel your subscription.
+      {isAdminUser ? (
+        <div
+          style={{
+            padding: "1.5rem",
+            border: "1px solid #d0d5dd",
+            borderRadius: "16px",
+            backgroundColor: "#f8fafc",
+            display: "grid",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, color: "#101828" }}>Administration</h2>
+            <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
+              Review pending signals and manage what appears in the live feed.
             </p>
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={handleManageSubscription}
-                disabled={isOpeningBillingPortal}
-                style={portalButtonStyle(isOpeningBillingPortal)}
-              >
-                {isOpeningBillingPortal ? "Opening portal..." : "Manage subscription"}
-              </button>
-              {profile.plan === "pro" ? (
-                <Link to="/upgrade?plan=elite" style={secondaryLinkStyle}>
-                  Upgrade to Elite
-                </Link>
-              ) : null}
+          </div>
+
+          <div style={statsGridStyle}>
+            <StatCard label="Role" value="Administrator" />
+            <StatCard label="Signal Review" value="Available" />
+            <StatCard label="Member Access" value="Full" />
+          </div>
+
+          <div style={billingNoticeStyle}>
+            <strong>Review queue</strong>
+            <p style={{ margin: 0 }}>
+              Open the review workspace to approve, reject, and manage signal status updates.
+            </p>
+            <div>
+              <Link to="/admin/signals" style={secondaryLinkStyle}>
+                Open signal review
+              </Link>
             </div>
           </div>
-        ) : null}
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "1.5rem",
+            border: "1px solid #d0d5dd",
+            borderRadius: "16px",
+            backgroundColor: "#f8fafc",
+            display: "grid",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, color: "#101828" }}>Billing</h2>
+            <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
+              Your plan access and billing status are shown here.
+            </p>
+          </div>
 
-        {billingActionError ? (
-          <p style={{ margin: 0, color: "#b42318", fontWeight: 700 }}>{billingActionError}</p>
-        ) : null}
-      </div>
+          <div style={statsGridStyle}>
+            <StatCard label="Current Plan" value={isProfileLoading ? "Loading..." : (profile.currentPlan ?? profile.plan)} />
+            <StatCard label="Billing Status" value={isProfileLoading ? "Loading..." : (profile.billingStatus ?? "Not billed")} />
+            <StatCard
+              label="Billing Access"
+              value={isProfileLoading ? "Loading..." : (hasPaidBillingAccess ? "Active" : "Upgrade required")}
+            />
+            <StatCard
+              label="Billing Setup"
+              value={isProfileLoading ? "Loading..." : (profile.stripeCustomerId ? "Connected" : "Not linked")}
+            />
+          </div>
+
+          {isStripeManagedUser ? (
+            <div style={billingNoticeStyle}>
+              <strong>Billing Management</strong>
+              <p style={{ margin: 0 }}>
+                Manage your payment method, update your plan, or cancel your subscription.
+              </p>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleManageSubscription}
+                  disabled={isOpeningBillingPortal}
+                  style={portalButtonStyle(isOpeningBillingPortal)}
+                >
+                  {isOpeningBillingPortal ? "Opening billing..." : "Manage subscription"}
+                </button>
+                {profile.plan === "pro" ? (
+                  <Link to="/upgrade?plan=elite" style={secondaryLinkStyle}>
+                    Upgrade to Elite
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {billingActionError ? (
+            <p style={{ margin: 0, color: "#b42318", fontWeight: 700 }}>{billingActionError}</p>
+          ) : null}
+        </div>
+      )}
 
       <div
         style={{
@@ -639,6 +691,8 @@ const isBillingIssueStatus = (billingStatus?: string) => {
     "incomplete_expired",
   ].includes(billingStatus);
 };
+
+const capitalizePlan = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 
 const sampleSignals: Signal[] = [
   {

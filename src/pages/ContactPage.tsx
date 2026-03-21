@@ -1,4 +1,97 @@
+import { useEffect, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+
+const initialFormState = {
+  name: "",
+  email: "",
+  subject: "",
+  message: "",
+  company: "",
+};
+
 function ContactPage() {
+  const [formData, setFormData] = useState(initialFormState);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitSuccess, setSubmitSuccess] = useState("");
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!cooldownUntil) {
+      return undefined;
+    }
+
+    const remainingDelay = cooldownUntil - Date.now();
+
+    if (remainingDelay <= 0) {
+      setCooldownUntil(null);
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCooldownUntil(null);
+    }, remainingDelay);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [cooldownUntil]);
+
+  const handleFieldChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = event.target;
+
+    setFormData((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (isSubmitDisabled) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError("");
+    setSubmitSuccess("");
+
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          subject: formData.subject.trim(),
+          message: formData.message.trim(),
+          company: formData.company.trim(),
+        }),
+      });
+
+      const result = (await parseContactResponse(response)) as ContactSubmitResponse;
+
+      if (!response.ok || !result.success) {
+        throw new Error("Request failed");
+      }
+
+      setFormData(initialFormState);
+      setSubmitSuccess("Your message has been sent. Our team will respond shortly.");
+      setCooldownUntil(Date.now() + 15_000);
+    } catch {
+      setSubmitError("Something went wrong. Please try again later.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const isCoolingDown = cooldownUntil !== null && cooldownUntil > Date.now();
+  const isSubmitDisabled = isSubmitting || isCoolingDown;
+  const buttonLabel = isSubmitting ? "Sending..." : isCoolingDown ? "Please wait..." : "Send Message";
+
   return (
     <section style={pageStyle}>
       <div style={heroStyle}>
@@ -60,41 +153,85 @@ function ContactPage() {
             </p>
           </div>
 
-          <form style={formStyle}>
+          <form style={formStyle} onSubmit={handleSubmit}>
             <div style={formGridStyle}>
               <label style={fieldStyle}>
                 <span style={fieldLabelStyle}>Name</span>
-                <input type="text" name="name" placeholder="Your name" style={inputStyle} />
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleFieldChange}
+                  placeholder="Your name"
+                  style={inputStyle}
+                  autoComplete="name"
+                  required
+                />
               </label>
 
               <label style={fieldStyle}>
                 <span style={fieldLabelStyle}>Email</span>
-                <input type="email" name="email" placeholder="you@example.com" style={inputStyle} />
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleFieldChange}
+                  placeholder="you@example.com"
+                  style={inputStyle}
+                  autoComplete="email"
+                  required
+                />
               </label>
             </div>
 
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Subject</span>
-              <input type="text" name="subject" placeholder="How can we help?" style={inputStyle} />
+              <input
+                type="text"
+                name="subject"
+                value={formData.subject}
+                onChange={handleFieldChange}
+                placeholder="How can we help?"
+                style={inputStyle}
+                required
+              />
             </label>
 
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Message</span>
               <textarea
                 name="message"
+                value={formData.message}
+                onChange={handleFieldChange}
                 rows={7}
                 placeholder="Tell us a little about your question or request."
                 style={textareaStyle}
+                required
+              />
+            </label>
+
+            <label style={honeypotFieldStyle} aria-hidden="true">
+              <span style={fieldLabelStyle}>Company</span>
+              <input
+                type="text"
+                name="company"
+                value={formData.company}
+                onChange={handleFieldChange}
+                tabIndex={-1}
+                autoComplete="off"
+                style={inputStyle}
               />
             </label>
 
             <div style={formFooterStyle}>
+              {submitSuccess ? <p style={successMessageStyle}>{submitSuccess}</p> : null}
+              {submitError ? <p style={errorMessageStyle}>{submitError}</p> : null}
               <p style={formNoteStyle}>
-                This form is currently for layout and message drafting only. Please email the appropriate team above
-                for a direct response.
+                Use the form for general questions and account support. For billing-specific issues, you can also
+                contact the billing address listed above.
               </p>
-              <button type="button" style={buttonStyle}>
-                Send Message
+              <button type="submit" disabled={isSubmitDisabled} style={buttonStyle(isSubmitDisabled)}>
+                {buttonLabel}
               </button>
             </div>
           </form>
@@ -102,6 +239,29 @@ function ContactPage() {
       </div>
     </section>
   );
+}
+
+type ContactSubmitResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string[];
+};
+
+async function parseContactResponse(response: Response): Promise<ContactSubmitResponse> {
+  const rawText = await response.text();
+
+  if (!rawText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText) as ContactSubmitResponse;
+  } catch {
+    return {
+      success: false,
+      error: "Invalid JSON response",
+    };
+  }
 }
 
 const pageStyle = {
@@ -300,7 +460,35 @@ const formNoteStyle = {
   fontSize: "0.95rem",
 };
 
-const buttonStyle = {
+const successMessageStyle = {
+  margin: 0,
+  padding: "0.9rem 1rem",
+  borderRadius: "14px",
+  backgroundColor: "#ecfdf3",
+  color: "#027a48",
+  fontWeight: 700,
+  lineHeight: 1.6,
+};
+
+const errorMessageStyle = {
+  margin: 0,
+  padding: "0.9rem 1rem",
+  borderRadius: "14px",
+  backgroundColor: "#fef3f2",
+  color: "#b42318",
+  fontWeight: 700,
+  lineHeight: 1.6,
+};
+
+const honeypotFieldStyle = {
+  position: "absolute" as const,
+  left: "-9999px",
+  width: "1px",
+  height: "1px",
+  overflow: "hidden" as const,
+};
+
+const buttonStyle = (isDisabled: boolean) => ({
   justifySelf: "start",
   padding: "0.95rem 1.35rem",
   borderRadius: "999px",
@@ -308,7 +496,8 @@ const buttonStyle = {
   backgroundColor: "#101828",
   color: "#ffffff",
   fontWeight: 700,
-  cursor: "pointer",
-};
+  cursor: isDisabled ? "not-allowed" : "pointer",
+  opacity: isDisabled ? 0.7 : 1,
+});
 
 export default ContactPage;

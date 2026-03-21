@@ -1,29 +1,20 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import type { User } from "firebase/auth";
 import { auth, hasRequiredFirebaseClientConfig } from "../lib/firebase";
-
-type AuthContextValue = {
-  currentUser: User | null;
-  loading: boolean;
-};
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { AuthContext } from "./auth-context";
 
 type AuthProviderProps = {
   children: ReactNode;
 };
 
 function AuthProvider({ children }: AuthProviderProps) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
+  const [loading, setLoading] = useState(hasRequiredFirebaseClientConfig);
 
   useEffect(() => {
     if (!hasRequiredFirebaseClientConfig) {
-      setCurrentUser(null);
-      setLoading(false);
-      return;
+      return undefined;
     }
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -40,15 +31,5 @@ function AuthProvider({ children }: AuthProviderProps) {
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider.");
-  }
-
-  return context;
-};
 
 export default AuthProvider;

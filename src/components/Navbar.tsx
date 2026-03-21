@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { logout } from "../lib/auth";
-import { getUserProfile } from "../lib/firestore";
-import type { UserPlan, UserRole } from "../lib/firestore";
+import { getUserProfile, hasActiveBillingAccess } from "../lib/firestore";
+import type { UserPlan, UserRole, UserProfile } from "../lib/firestore";
 
 const publicNavItems = [
   { label: "Home", to: "/" },
@@ -19,6 +19,7 @@ function Navbar() {
   const { currentUser, loading } = useAuth();
   const [plan, setPlan] = useState<UserPlan>("free");
   const [role, setRole] = useState<UserRole>("member");
+  const [billingStatus, setBillingStatus] = useState<UserProfile["billingStatus"]>(undefined);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -30,6 +31,7 @@ function Navbar() {
         if (isMounted) {
           setPlan("free");
           setRole("member");
+          setBillingStatus(undefined);
           setIsProfileLoading(false);
         }
 
@@ -44,6 +46,13 @@ function Navbar() {
         if (isMounted) {
           setPlan(profile?.plan ?? "free");
           setRole(profile?.role ?? "member");
+          setBillingStatus(profile?.billingStatus);
+        }
+      } catch {
+        if (isMounted) {
+          setPlan("free");
+          setRole("member");
+          setBillingStatus(undefined);
         }
       } finally {
         if (isMounted) {
@@ -72,7 +81,15 @@ function Navbar() {
 
   const isSignedIn = !!currentUser;
   const showAdminLink = isSignedIn && role === "admin";
-  const accountLabel = role === "admin" ? "Account" : capitalizePlan(plan);
+  const showDashboardLink =
+    isSignedIn
+    && !isProfileLoading
+    && hasActiveBillingAccess({
+      plan,
+      role,
+      billingStatus,
+    });
+  const accountLabel = role === "admin" ? "Administrator" : `${capitalizePlan(plan)} plan`;
 
   return (
     <header
@@ -136,9 +153,11 @@ function Navbar() {
 
             {isSignedIn ? (
               <>
-                <NavLink to="/dashboard" style={({ isActive }) => navLinkStyle(isActive)}>
-                  Dashboard
-                </NavLink>
+                {showDashboardLink ? (
+                  <NavLink to="/dashboard" style={({ isActive }) => navLinkStyle(isActive)}>
+                    Dashboard
+                  </NavLink>
+                ) : null}
                 {showAdminLink ? (
                   <NavLink to="/admin/signals" style={({ isActive }) => navLinkStyle(isActive)}>
                     Review

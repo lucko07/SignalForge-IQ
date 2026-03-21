@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { isSecureCheckoutReady, startStripeCheckout } from "../lib/billing";
 import { getUserProfile } from "../lib/firestore";
 import type { UserPlan } from "../lib/firestore";
@@ -87,7 +87,7 @@ function UpgradePage() {
       const message =
         checkoutError instanceof Error && checkoutError.message.trim()
           ? checkoutError.message.trim()
-          : "Unable to start checkout right now.";
+          : "Unable to start payment right now.";
       setError(message);
       setIsSubmitting(false);
     }
@@ -98,7 +98,7 @@ function UpgradePage() {
       <div style={heroCardStyle}>
         <h1 style={{ margin: 0 }}>Upgrade to {capitalizePlan(requestedPlan)}</h1>
         <p style={{ margin: 0, color: "#475467" }}>
-          Secure checkout is ready. Your access will update automatically after payment confirmation.
+          Secure payment is ready. Your access will update automatically after your membership is confirmed.
         </p>
       </div>
 
@@ -134,19 +134,19 @@ function UpgradePage() {
         {isDowngradeBlocked ? (
           <div style={warningBannerStyle}>
             Your account is already on Elite. Downgrade handling will be added through a
-            future billing portal flow.
+            future account billing update.
           </div>
         ) : null}
 
         {!isSecureCheckoutReady ? (
           <div style={warningBannerStyle}>
-            Secure checkout is temporarily unavailable. Please try again later.
+            Secure payment is temporarily unavailable. Please try again later.
           </div>
         ) : null}
 
         {!isAlreadyOnRequestedPlan && !isDowngradeBlocked && isSecureCheckoutReady ? (
           <div style={noticeBannerStyle}>
-            Clicking continue takes you to secure checkout. Your access updates automatically after your subscription is confirmed.
+            Clicking continue takes you to secure payment. Your access updates automatically after your membership is confirmed.
           </div>
         ) : null}
 
@@ -159,7 +159,7 @@ function UpgradePage() {
             disabled={!canCheckout || isSubmitting}
             style={primaryButtonStyle(!canCheckout || isSubmitting)}
           >
-            {isSubmitting ? "Redirecting to secure checkout..." : "Continue to checkout"}
+            {isSubmitting ? "Redirecting to payment..." : "Continue to payment"}
           </button>
           <Link to="/pricing" style={secondaryLinkStyle}>
             Back to pricing

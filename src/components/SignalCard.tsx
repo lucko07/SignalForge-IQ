@@ -81,7 +81,7 @@ function SignalCard({ signal }: SignalCardProps) {
       >
         {createdAtLabel ? <MetadataPill label={`Created ${createdAtLabel}`} /> : null}
         {closedAtLabel ? <MetadataPill label={`Closed ${closedAtLabel}`} /> : null}
-        {sourceLabel ? <MetadataPill label={`Source ${sourceLabel}`} /> : null}
+        {sourceLabel ? <MetadataPill label={`Channel ${sourceLabel}`} /> : null}
         <MetadataPill label={`Status ${signal.status}`} />
         {signal.outcome ? <MetadataPill label={`Outcome ${signal.outcome}`} /> : null}
         {pnlLabel ? <MetadataPill label={`PnL ${pnlLabel}`} /> : null}

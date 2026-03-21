@@ -197,9 +197,7 @@ export const createUserProfile = async ({
   uid,
   fullName,
   email,
-  plan: _plan,
-  role: _role = "member",
-}: UserProfile) => {
+}: Pick<UserProfile, "uid" | "fullName" | "email"> & Partial<Pick<UserProfile, "plan" | "role">>) => {
   await setDoc(doc(db, "users", uid), {
     fullName,
     email,

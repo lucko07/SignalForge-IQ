@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { getUserProfile } from "../lib/firestore";
 import type { UserPlan } from "../lib/firestore";
 
@@ -76,6 +76,10 @@ function PricingPage() {
 
         if (isMounted) {
           setCurrentPlan(profile?.plan ?? "free");
+        }
+      } catch {
+        if (isMounted) {
+          setCurrentPlan("free");
         }
       } finally {
         if (isMounted) {

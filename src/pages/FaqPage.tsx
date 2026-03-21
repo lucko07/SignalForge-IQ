@@ -29,7 +29,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "Are signals posted instantly?",
         answer:
-          "Signals may pass through an internal review workflow before appearing live. That helps keep the feed organized and gives users a clearer view of what is pending review versus what is active.",
+          "Signals may be checked before appearing live. That helps keep the feed organized and makes it easier to distinguish what is still pending from what is already active.",
       },
       {
         question: "What do statuses like pending, active, and closed mean?",
@@ -81,7 +81,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "Can I cancel my subscription anytime?",
         answer:
-          "Yes. Subscriptions can be canceled from the billing portal. In most cases, cancellation is scheduled for the end of the current billing period.",
+          "Yes. Subscriptions can be canceled from your account billing page. In most cases, cancellation is scheduled for the end of the current billing period.",
       },
       {
         question: "What happens after I cancel?",
@@ -96,7 +96,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "Can I manage my payment method?",
         answer:
-          "Yes. Paid members can use the billing portal to review billing details, manage payment methods, and handle subscription changes.",
+          "Yes. Paid members can use the account billing page to review billing details, manage payment methods, and handle subscription changes.",
       },
     ],
   },
@@ -112,7 +112,7 @@ const faqCategories: FaqCategory[] = [
       {
         question: "What happens when I upgrade to Pro or Elite?",
         answer:
-          "After checkout completes and your subscription is confirmed, your account plan updates and access expands to the protected dashboard.",
+          "After payment is completed and your membership is confirmed, your account plan updates and access expands to the protected dashboard.",
       },
       {
         question: "What happens if my payment fails?",

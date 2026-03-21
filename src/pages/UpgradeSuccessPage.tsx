@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { getUserProfile } from "../lib/firestore";
 import type { UserPlan } from "../lib/firestore";
 
@@ -55,10 +55,10 @@ function UpgradeSuccessPage() {
   return (
     <section style={{ maxWidth: "720px", margin: "0 auto", display: "grid", gap: "1rem" }}>
       <div style={heroCardStyle}>
-        <h1 style={{ margin: 0 }}>Checkout complete</h1>
+        <h1 style={{ margin: 0 }}>Payment complete</h1>
         <p style={{ margin: 0, color: "#475467" }}>
           Your payment was completed successfully. Your access updates as soon as the
-          subscription confirmation finishes syncing.
+          membership confirmation is finalized.
         </p>
       </div>
 
@@ -79,8 +79,8 @@ function UpgradeSuccessPage() {
           </div>
         ) : (
           <div style={noticeBannerStyle}>
-            Payment was successful, but plan access is still syncing. This usually resolves
-            within a few seconds after confirmation is processed.
+            Payment was successful, but plan access is still updating. This usually resolves
+            within a few seconds.
           </div>
         )}
 

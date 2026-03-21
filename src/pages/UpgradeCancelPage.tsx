@@ -16,7 +16,7 @@ function UpgradeCancelPage() {
           gap: "0.5rem",
         }}
       >
-        <h1 style={{ margin: 0 }}>Checkout canceled</h1>
+        <h1 style={{ margin: 0 }}>Payment canceled</h1>
         <p style={{ margin: 0, color: "#475467" }}>
           Your {requestedPlan} upgrade was canceled before payment completed. No plan
           changes were made.
@@ -34,7 +34,7 @@ function UpgradeCancelPage() {
         }}
       >
         <p style={{ margin: 0, color: "#475467" }}>
-          You can return to pricing, review the plan details again, and restart checkout
+          You can return to pricing, review the plan details again, and restart payment
           whenever you are ready.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

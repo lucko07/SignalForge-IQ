@@ -1,7 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useAuth } from "../context/AuthProvider";
+import { useAuth } from "../context/auth-context";
 import { getUserProfile, hasActiveBillingAccess } from "../lib/firestore";
 import type { UserPlan, UserRole, UserProfile } from "../lib/firestore";
 
@@ -23,32 +23,30 @@ function ProtectedRoute({
   const [profileRole, setProfileRole] = useState<UserRole>("member");
   const [profilePlan, setProfilePlan] = useState<UserPlan>("free");
   const [billingStatus, setBillingStatus] = useState<UserProfile["billingStatus"]>(undefined);
-  const [checkedProfileUid, setCheckedProfileUid] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
+    const resetProfileState = () => {
+      setProfileRole("member");
+      setProfilePlan("free");
+      setBillingStatus(undefined);
+    };
+
     const checkAccessProfile = async () => {
       if (!requireAdmin && !requirePaidPlan) {
         setIsProfileLoading(false);
-        setProfileRole("member");
-        setProfilePlan("free");
-        setBillingStatus(undefined);
-        setCheckedProfileUid(null);
+        resetProfileState();
         return;
       }
 
       if (!currentUser) {
-        setProfileRole("member");
-        setProfilePlan("free");
-        setBillingStatus(undefined);
+        resetProfileState();
         setIsProfileLoading(false);
-        setCheckedProfileUid(null);
         return;
       }
 
       setIsProfileLoading(true);
-      setCheckedProfileUid(null);
 
       try {
         const userProfile = await getUserProfile(currentUser.uid);
@@ -57,7 +55,10 @@ function ProtectedRoute({
           setProfileRole(userProfile?.role ?? "member");
           setProfilePlan(userProfile?.plan ?? "free");
           setBillingStatus(userProfile?.billingStatus);
-          setCheckedProfileUid(currentUser.uid);
+        }
+      } catch {
+        if (isMounted) {
+          resetProfileState();
         }
       } finally {
         if (isMounted) {
@@ -73,8 +74,6 @@ function ProtectedRoute({
     };
   }, [currentUser, requireAdmin, requirePaidPlan]);
 
-  const isProfileCheckPending =
-    (requireAdmin || requirePaidPlan) && !!currentUser && checkedProfileUid !== currentUser.uid;
   const hasAdminAccess = profileRole === "admin";
   const hasPaidAccess = hasActiveBillingAccess({
     plan: profilePlan,
@@ -82,8 +81,8 @@ function ProtectedRoute({
     billingStatus,
   });
 
-  if (loading || isProfileLoading || isProfileCheckPending) {
-    return <div style={{ padding: "2rem 0" }}>Checking your session...</div>;
+  if (loading || isProfileLoading) {
+    return <div style={{ padding: "2rem 0" }}>Checking your access...</div>;
   }
 
   if (!currentUser) {

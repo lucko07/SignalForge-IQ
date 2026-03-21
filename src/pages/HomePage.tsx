@@ -35,7 +35,7 @@ function HomePage() {
         </h1>
         <p style={{ margin: "0 0 1.5rem", fontSize: "1.05rem", color: "#475467" }}>
           This base site gives you a clear landing page, clickable navigation, and
-          route-ready placeholder sections for pricing, signals, education, support,
+          dedicated sections for pricing, signals, education, support,
           and account access.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

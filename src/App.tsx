@@ -45,8 +45,8 @@ function App() {
         >
           <h1 style={{ margin: 0, color: "#101828" }}>SignalForge IQ</h1>
           <p style={{ margin: 0, color: "#475467", lineHeight: 1.7 }}>
-            The app is temporarily unavailable because setup is incomplete. Please
-            add the required client configuration and reload the page.
+            The app is temporarily unavailable while setup is being completed. Please
+            refresh the page again shortly.
           </p>
         </section>
       </main>
