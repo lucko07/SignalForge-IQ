@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "./layouts/MainLayout";
 import HomePage from "./pages/HomePage";
@@ -19,88 +18,9 @@ import UpgradeSuccessPage from "./pages/UpgradeSuccessPage";
 import UpgradeCancelPage from "./pages/UpgradeCancelPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
-import MaintenancePage from "./pages/MaintenancePage";
 import { hasRequiredFirebaseClientConfig } from "./lib/firebase";
-import { activateMaintenanceBypass, getMaintenanceStatus } from "./lib/maintenance";
-
-type MaintenanceState = {
-  enabled: boolean;
-  bypassed: boolean;
-  isLoading: boolean;
-  isCheckingBypass: boolean;
-};
 
 function App() {
-  const [maintenanceState, setMaintenanceState] = useState<MaintenanceState>({
-    enabled: false,
-    bypassed: true,
-    isLoading: true,
-    isCheckingBypass: false,
-  });
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadMaintenanceState = async () => {
-      try {
-        const url = new URL(window.location.href);
-        const bypassToken = url.searchParams.get("maintenance_bypass");
-
-        if (bypassToken) {
-          if (isMounted) {
-            setMaintenanceState((currentState) => ({
-              ...currentState,
-              isCheckingBypass: true,
-            }));
-          }
-
-          try {
-            await activateMaintenanceBypass(bypassToken);
-          } catch {
-            // Keep the maintenance page generic if bypass activation fails.
-          } finally {
-            url.searchParams.delete("maintenance_bypass");
-            window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-          }
-        }
-
-        const status = await getMaintenanceStatus();
-
-        if (isMounted) {
-          setMaintenanceState({
-            enabled: status.enabled,
-            bypassed: status.bypassed,
-            isLoading: false,
-            isCheckingBypass: false,
-          });
-        }
-      } catch {
-        if (isMounted) {
-          setMaintenanceState({
-            enabled: false,
-            bypassed: true,
-            isLoading: false,
-            isCheckingBypass: false,
-          });
-        }
-      }
-    };
-
-    void loadMaintenanceState();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  if (maintenanceState.isLoading) {
-    return <MaintenancePage isCheckingBypass={maintenanceState.isCheckingBypass} />;
-  }
-
-  if (maintenanceState.enabled && !maintenanceState.bypassed) {
-    return <MaintenancePage isCheckingBypass={maintenanceState.isCheckingBypass} />;
-  }
-
   if (!hasRequiredFirebaseClientConfig) {
     return (
       <main
@@ -138,7 +58,6 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/maintenance" element={<MaintenancePage />} />
         <Route element={<MainLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/pricing" element={<PricingPage />} />

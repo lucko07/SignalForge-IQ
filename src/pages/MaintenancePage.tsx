@@ -1,8 +1,4 @@
-type MaintenancePageProps = {
-  isCheckingBypass?: boolean;
-};
-
-function MaintenancePage({ isCheckingBypass = false }: MaintenancePageProps) {
+function MaintenancePage() {
   return (
     <main style={pageStyle}>
       <section style={panelStyle}>
@@ -15,10 +11,9 @@ function MaintenancePage({ isCheckingBypass = false }: MaintenancePageProps) {
           Your account and membership details remain intact. Please check back shortly.
         </p>
         <p style={supportStyle}>
-          Need help while the site is unavailable? Please use your usual SignalForge IQ support channel or return to
-          the contact page once service is restored.
+          If you need assistance, please contact SignalForge IQ support after service returns or through your normal
+          support channel.
         </p>
-        {isCheckingBypass ? <p style={statusStyle}>Checking authorized access...</p> : null}
       </section>
     </main>
   );
@@ -82,12 +77,6 @@ const supportStyle = {
   margin: 0,
   color: "#667085",
   lineHeight: 1.7,
-};
-
-const statusStyle = {
-  margin: 0,
-  color: "#175cd3",
-  fontWeight: 700,
 };
 
 export default MaintenancePage;
