@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Timestamp } from "firebase/firestore";
 import SignalCard from "../components/SignalCard";
+import TradingDisclaimer from "../components/TradingDisclaimer";
 import { useAuth } from "../context/auth-context";
 import { logout } from "../lib/auth";
 import { openBillingPortal } from "../lib/billing";
@@ -299,6 +300,10 @@ function DashboardPage() {
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
               Your plan access and billing status are shown here.
             </p>
+            <p style={{ margin: "0.4rem 0 0", color: "#667085" }}>
+              Pro includes protected dashboard access, live signals, closed trade history, and performance tracking.
+              Elite includes everything in Pro plus higher-tier premium access and future expanded member benefits.
+            </p>
           </div>
 
           <div style={statsGridStyle}>
@@ -460,6 +465,10 @@ function DashboardPage() {
             ))}
           </div>
         ) : null}
+
+        <div style={{ marginTop: "1rem" }}>
+          <TradingDisclaimer />
+        </div>
       </div>
 
       <div

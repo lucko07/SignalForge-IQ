@@ -16,6 +16,8 @@ import AdminSignalsPage from "./pages/AdminSignalsPage";
 import UpgradePage from "./pages/UpgradePage";
 import UpgradeSuccessPage from "./pages/UpgradeSuccessPage";
 import UpgradeCancelPage from "./pages/UpgradeCancelPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import { hasRequiredFirebaseClientConfig } from "./lib/firebase";
 
 function App() {
@@ -64,6 +66,8 @@ function App() {
           <Route path="/education" element={<EducationPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route

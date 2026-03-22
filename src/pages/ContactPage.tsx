@@ -135,6 +135,9 @@ function ContactPage() {
               Most messages receive a response within 1 business day. More detailed account or billing requests may
               take slightly longer when additional review is needed.
             </p>
+            <p style={detailMutedStyle}>
+              Questions about plan access, member benefits, or signal coverage are welcome.
+            </p>
           </article>
 
           <article style={detailCardStyle}>

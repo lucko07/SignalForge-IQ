@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import SignalCard from "../components/SignalCard";
+import TradingDisclaimer from "../components/TradingDisclaimer";
 import { subscribeToSignals } from "../lib/firestore";
 import type { Signal } from "../lib/firestore";
 
@@ -61,7 +62,8 @@ function SignalsPage() {
         </p>
         <h1 style={{ margin: "0 0 1rem", fontSize: "2.5rem" }}>Signals</h1>
         <p style={{ margin: 0, maxWidth: "720px" }}>
-          A preview of recent trading signals. Members unlock full access to the live dashboard.
+          A preview of recent trading signals. Signal flow depends on market conditions and setup quality, with
+          member access focused on quality rather than a fixed posting schedule.
         </p>
       </div>
 
@@ -145,8 +147,8 @@ function SignalsPage() {
       >
         <h2 style={{ margin: "0 0 0.75rem", color: "#ffffff" }}>Members-Only Access</h2>
         <p style={{ margin: "0 0 1.25rem", color: "#d0d5dd" }}>
-          Full signal history stays inside the protected dashboard. Sign up or log in
-          to access the live member view.
+          Pro includes the protected dashboard, live signals, closed trade history, and performance tracking.
+          Elite includes everything in Pro plus higher-tier premium access and future expanded member benefits.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <Link
@@ -178,6 +180,8 @@ function SignalsPage() {
           </Link>
         </div>
       </div>
+
+      <TradingDisclaimer />
     </section>
   );
 }

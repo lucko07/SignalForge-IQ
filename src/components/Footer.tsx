@@ -1,9 +1,12 @@
 import { Link } from "react-router-dom";
+import TradingDisclaimer from "./TradingDisclaimer";
 
 const footerLinks = [
   { label: "Pricing", to: "/pricing" },
   { label: "Signals", to: "/signals" },
   { label: "Contact", to: "/contact" },
+  { label: "Terms", to: "/terms" },
+  { label: "Privacy", to: "/privacy" },
 ] as const;
 
 function Footer() {
@@ -20,24 +23,33 @@ function Footer() {
           maxWidth: "1100px",
           margin: "0 auto",
           padding: "1.25rem 2rem",
-          display: "flex",
-          justifyContent: "space-between",
+          display: "grid",
           gap: "1rem",
-          flexWrap: "wrap",
           color: "#475467",
         }}
       >
-        <p style={{ margin: 0, fontWeight: 600 }}>SignalForge IQ</p>
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
-          <p style={{ margin: 0 }}>Market education, signals, and account access.</p>
-          <nav aria-label="Footer" style={{ display: "flex", gap: "0.85rem", flexWrap: "wrap" }}>
-            {footerLinks.map((link) => (
-              <Link key={link.to} to={link.to} style={footerLinkStyle}>
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "1rem",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 600 }}>SignalForge IQ</p>
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+            <p style={{ margin: 0 }}>Market education, signals, and account access.</p>
+            <nav aria-label="Footer" style={{ display: "flex", gap: "0.85rem", flexWrap: "wrap" }}>
+              {footerLinks.map((link) => (
+                <Link key={link.to} to={link.to} style={footerLinkStyle}>
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
         </div>
+        <TradingDisclaimer compact />
       </div>
     </footer>
   );

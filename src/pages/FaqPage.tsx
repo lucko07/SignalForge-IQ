@@ -37,6 +37,11 @@ const faqCategories: FaqCategory[] = [
           "Pending means a signal is still under review, active means the idea is live, and closed means the trade has finished. Closed trades may later be categorized as a win, loss, or breakeven.",
       },
       {
+        question: "How often are signals posted?",
+        answer:
+          "Signal frequency depends on market conditions and setup quality. SignalForge IQ does not guarantee a fixed number of signals per day or week unless product policy is updated in the future.",
+      },
+      {
         question: "Are signals financial advice?",
         answer:
           "No. SignalForge IQ provides structured trade ideas and educational information only. Users remain responsible for their own analysis, execution, and risk management decisions.",
@@ -55,12 +60,12 @@ const faqCategories: FaqCategory[] = [
       {
         question: "What is included in the Pro plan?",
         answer:
-          "Pro unlocks the protected dashboard, member signal access, billing visibility, and the main subscription-managed account experience.",
+          "Pro includes protected dashboard access, live signals, closed trade history, and performance tracking.",
       },
       {
         question: "What is included in the Elite plan?",
         answer:
-          "Elite includes the protected dashboard and premium membership tier access, with room for future advanced member features as the platform expands.",
+          "Elite includes everything in Pro plus higher-tier premium access and future expanded member benefits.",
       },
       {
         question: "Can I upgrade later?",
