@@ -13,11 +13,17 @@ import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminSignalsPage from "./pages/AdminSignalsPage";
+import PerformanceOverview from "./pages/dashboard/PerformanceOverview";
+import TradesPage from "./pages/dashboard/TradesPage";
+import AnalyticsPage from "./pages/dashboard/AnalyticsPage";
+import AutomationPage from "./pages/dashboard/AutomationPage";
+import AdminDataPage from "./pages/admin/AdminDataPage";
 import UpgradePage from "./pages/UpgradePage";
 import UpgradeSuccessPage from "./pages/UpgradeSuccessPage";
 import UpgradeCancelPage from "./pages/UpgradeCancelPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
+import LegalConsentPage from "./pages/LegalConsentPage";
 import { hasRequiredFirebaseClientConfig } from "./lib/firebase";
 
 function App() {
@@ -71,9 +77,17 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route
-            path="/upgrade"
+            path="/legal-consent"
             element={
               <ProtectedRoute>
+                <LegalConsentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/upgrade"
+            element={
+              <ProtectedRoute requireLegalConsent>
                 <UpgradePage />
               </ProtectedRoute>
             }
@@ -81,7 +95,7 @@ function App() {
           <Route
             path="/upgrade/success"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requireLegalConsent>
                 <UpgradeSuccessPage />
               </ProtectedRoute>
             }
@@ -89,24 +103,66 @@ function App() {
           <Route
             path="/upgrade/cancel"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requireLegalConsent>
                 <UpgradeCancelPage />
               </ProtectedRoute>
             }
           />
+          <Route path="/dashboard">
+            <Route
+              index
+              element={
+                <ProtectedRoute requireLegalConsent>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="performance"
+              element={
+                <ProtectedRoute requireSubscription requireLegalConsent>
+                  <PerformanceOverview />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="trades"
+              element={
+                <ProtectedRoute requireSubscription requireLegalConsent>
+                  <TradesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="analytics"
+              element={
+                <ProtectedRoute requireSubscription requireLegalConsent>
+                  <AnalyticsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="automation"
+              element={
+                <ProtectedRoute requireLegalConsent>
+                  <AutomationPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
           <Route
-            path="/dashboard"
+            path="/admin/signals"
             element={
-              <ProtectedRoute requirePaidPlan>
-                <DashboardPage />
+              <ProtectedRoute requireAdmin requireLegalConsent>
+                <AdminSignalsPage />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/admin/signals"
+            path="/admin/data"
             element={
-              <ProtectedRoute requireAdmin>
-                <AdminSignalsPage />
+              <ProtectedRoute requireAdmin requireLegalConsent>
+                <AdminDataPage />
               </ProtectedRoute>
             }
           />
