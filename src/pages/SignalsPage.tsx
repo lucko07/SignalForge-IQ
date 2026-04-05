@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import SignalCard from "../components/SignalCard";
-import TradingDisclaimer from "../components/TradingDisclaimer";
 import { subscribeToSignals } from "../lib/firestore";
 import type { Signal } from "../lib/firestore";
 
@@ -181,7 +180,6 @@ function SignalsPage() {
         </div>
       </div>
 
-      <TradingDisclaimer />
     </section>
   );
 }

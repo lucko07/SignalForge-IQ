@@ -1,99 +1,48 @@
-import { Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "../context/auth-context";
-import { getUserProfile, hasActiveBillingAccess } from "../lib/firestore";
-import type { UserPlan, UserRole, UserProfile } from "../lib/firestore";
 
 type ProtectedRouteProps = {
   children: ReactNode;
   requireAdmin?: boolean;
-  requirePaidPlan?: boolean;
+  requireSubscription?: boolean;
+  requireLegalConsent?: boolean;
   redirectTo?: string;
 };
 
 function ProtectedRoute({
   children,
   requireAdmin = false,
-  requirePaidPlan = false,
+  requireSubscription = false,
+  requireLegalConsent = false,
   redirectTo = "/login",
 }: ProtectedRouteProps) {
-  const { currentUser, loading } = useAuth();
-  const [isProfileLoading, setIsProfileLoading] = useState(requireAdmin || requirePaidPlan);
-  const [profileRole, setProfileRole] = useState<UserRole>("member");
-  const [profilePlan, setProfilePlan] = useState<UserPlan>("free");
-  const [billingStatus, setBillingStatus] = useState<UserProfile["billingStatus"]>(undefined);
+  const location = useLocation();
+  const { currentUser, loading, isAdmin, hasSubscriptionAccess, hasLegalConsent } = useAuth();
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const resetProfileState = () => {
-      setProfileRole("member");
-      setProfilePlan("free");
-      setBillingStatus(undefined);
-    };
-
-    const checkAccessProfile = async () => {
-      if (!requireAdmin && !requirePaidPlan) {
-        setIsProfileLoading(false);
-        resetProfileState();
-        return;
-      }
-
-      if (!currentUser) {
-        resetProfileState();
-        setIsProfileLoading(false);
-        return;
-      }
-
-      setIsProfileLoading(true);
-
-      try {
-        const userProfile = await getUserProfile(currentUser.uid);
-
-        if (isMounted) {
-          setProfileRole(userProfile?.role ?? "member");
-          setProfilePlan(userProfile?.plan ?? "free");
-          setBillingStatus(userProfile?.billingStatus);
-        }
-      } catch {
-        if (isMounted) {
-          resetProfileState();
-        }
-      } finally {
-        if (isMounted) {
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    void checkAccessProfile();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser, requireAdmin, requirePaidPlan]);
-
-  const hasAdminAccess = profileRole === "admin";
-  const hasPaidAccess = hasActiveBillingAccess({
-    plan: profilePlan,
-    role: profileRole,
-    billingStatus,
-  });
-
-  if (loading || isProfileLoading) {
+  if (loading) {
     return <div style={{ padding: "2rem 0" }}>Checking your access...</div>;
   }
 
   if (!currentUser) {
-    return <Navigate to={redirectTo} replace />;
+    const nextPath = `${location.pathname}${location.search}${location.hash}`;
+    const redirectTarget = redirectTo.startsWith("/login")
+      ? `${redirectTo}${redirectTo.includes("?") ? "&" : "?"}next=${encodeURIComponent(nextPath)}`
+      : redirectTo;
+    return <Navigate to={redirectTarget} replace />;
   }
 
-  if (requireAdmin && !hasAdminAccess) {
-    return <Navigate to={hasPaidAccess ? "/dashboard" : "/pricing"} replace />;
+  if (requireLegalConsent && !hasLegalConsent) {
+    // Legal consent is enforced from Firestore-backed profile state, not local UI state.
+    const nextPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/legal-consent?next=${encodeURIComponent(nextPath)}`} replace />;
   }
 
-  if (requirePaidPlan && !hasPaidAccess) {
+  if (requireAdmin && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireSubscription && !hasSubscriptionAccess) {
     return <Navigate to="/pricing" replace />;
   }
 

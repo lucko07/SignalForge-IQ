@@ -1,8 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function userProfileEditableKeys() {
-      return ["fullName", "email", "createdAt"];
+    function currentTermsVersion() {
+      return "v1.0";
     }
 
     function isSignedIn() {
@@ -18,38 +18,124 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
+    function hasMemberAccess() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.termsAccepted == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.privacyAccepted == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.termsVersion == currentTermsVersion()
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == "admin"
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.subscriptionActive == true
+        );
+    }
+
+    function userProfileKeys() {
+      return [
+        "email",
+        "role",
+        "plan",
+        "subscriptionActive",
+        "phoneVerified",
+        "approved",
+        "createdAt",
+        "updatedAt",
+        "currentPlan",
+        "billingStatus",
+        "stripeCustomerId",
+        "stripeSubscriptionId",
+        "cancelAtPeriodEnd",
+        "subscriptionEndsAt",
+        "termsAccepted",
+        "privacyAccepted",
+        "termsVersion",
+        "termsAcceptedAt"
+      ];
+    }
+
+    function legalFieldsAreValid() {
+      return (!("termsAccepted" in request.resource.data) || request.resource.data.termsAccepted == true)
+        && (!("privacyAccepted" in request.resource.data) || request.resource.data.privacyAccepted == true)
+        && (!("termsVersion" in request.resource.data) || request.resource.data.termsVersion == currentTermsVersion())
+        && (!("termsAcceptedAt" in request.resource.data) || request.resource.data.termsAcceptedAt is timestamp);
+    }
+
     function isValidUserProfileCreate() {
-      return request.resource.data.keys().hasOnly(userProfileEditableKeys())
-        && request.resource.data.fullName is string
-        && request.resource.data.fullName.size() > 0
+      return request.resource.data.keys().hasOnly(userProfileKeys())
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.role == "user"
+        && request.resource.data.plan == "free"
+        && request.resource.data.subscriptionActive == false
+        && request.resource.data.phoneVerified is bool
+        && request.resource.data.approved is bool
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && legalFieldsAreValid();
     }
 
     function isValidUserProfileUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["fullName", "email"])
-        && request.resource.data.fullName is string
-        && request.resource.data.fullName.size() > 0
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "email",
+          "phoneVerified",
+          "approved",
+          "createdAt",
+          "updatedAt",
+          "termsAccepted",
+          "privacyAccepted",
+          "termsVersion",
+          "termsAcceptedAt"
+        ])
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.plan == resource.data.plan
+        && request.resource.data.subscriptionActive == resource.data.subscriptionActive
+        && request.resource.data.phoneVerified is bool
+        && request.resource.data.approved is bool
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && legalFieldsAreValid()
+        && (!(resource.data.termsAccepted == true) || request.resource.data.termsAccepted == true)
+        && (!(resource.data.privacyAccepted == true) || request.resource.data.privacyAccepted == true)
+        && (
+          !("termsVersion" in resource.data)
+          || resource.data.termsVersion == currentTermsVersion()
+          || request.resource.data.termsVersion == resource.data.termsVersion
+        )
+        && (
+          !("termsVersion" in request.resource.data)
+          || request.resource.data.termsVersion == currentTermsVersion()
+        );
     }
 
     match /users/{userId} {
       allow create: if isOwner(userId) && isValidUserProfileCreate();
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId);
       allow update: if isOwner(userId) && isValidUserProfileUpdate();
       allow delete: if false;
     }
 
     match /signals/{signalId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin() && resource.data.isTest == true;
     }
 
     match /pendingSignals/{signalId} {
       allow read, create, update, delete: if isAdmin();
+    }
+
+    match /trades/{tradeId} {
+      allow read: if hasMemberAccess();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin() && resource.data.isTest == true;
+    }
+
+    match /performance_summary/{summaryId} {
+      allow read: if hasMemberAccess();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /{document=**} {

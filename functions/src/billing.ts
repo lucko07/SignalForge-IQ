@@ -1,27 +1,36 @@
 import Stripe from "stripe";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import { requireLegalAcceptance } from "./legal.js";
 
 const stripeWebhookSecret = defineSecret("STRIPE_WEBHOOK_SECRET");
 
 type ManagedPlan = "pro" | "elite";
-type UserPlan = "free" | "pro" | "elite" | "admin";
-type UserRole = "member" | "admin";
+type UserPlan = "free" | "pro" | "admin";
+type CurrentPlan = "free" | "pro" | "elite" | "admin";
+type UserRole = "user" | "admin";
 
 type BillingProfile = {
   uid?: string;
   email?: string;
   plan?: UserPlan;
-  currentPlan?: UserPlan;
+  currentPlan?: CurrentPlan;
   role?: UserRole;
+  subscriptionActive?: boolean;
+  phoneVerified?: boolean;
+  approved?: boolean;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   billingStatus?: string;
   cancelAtPeriodEnd?: boolean;
   subscriptionEndsAt?: Timestamp | null;
   stripeSubscriptionStatus?: string;
+  termsAccepted?: boolean;
+  privacyAccepted?: boolean;
+  termsVersion?: string;
+  termsAcceptedAt?: Timestamp | null;
 };
 
 const getStripeClient = () => {
@@ -57,7 +66,15 @@ export const createCheckoutSession = onCall(
     }
 
     const profile = userSnapshot.data() as BillingProfile;
-    const currentPlan = normalizeUserPlan(profile.plan);
+    try {
+      requireLegalAcceptance(profile);
+    } catch (error) {
+      throw new HttpsError(
+        "failed-precondition",
+        error instanceof Error ? error.message : "Legal acceptance required"
+      );
+    }
+    const currentPlan = normalizeCurrentPlan(profile.currentPlan ?? profile.plan);
     const currentRole = normalizeUserRole(profile.role);
 
     if (currentRole === "admin") {
@@ -130,8 +147,16 @@ export const createBillingPortalSession = onCall({}, async (request) => {
   }
 
   const profile = userSnapshot.data() as BillingProfile;
+  try {
+    requireLegalAcceptance(profile);
+  } catch (error) {
+    throw new HttpsError(
+      "failed-precondition",
+      error instanceof Error ? error.message : "Legal acceptance required"
+    );
+  }
   const currentRole = normalizeUserRole(profile.role);
-  const currentPlan = normalizeUserPlan(profile.plan);
+  const currentPlan = normalizeCurrentPlan(profile.currentPlan ?? profile.plan);
 
   if (currentRole === "admin") {
     throw new HttpsError("failed-precondition", "Admin users do not use Stripe billing.");
@@ -470,7 +495,7 @@ const updateUserBillingProfile = async (
     stripeSubscriptionId?: string;
   },
   updates: {
-    plan: UserPlan;
+    plan: CurrentPlan;
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
     billingStatus?: string;
@@ -499,16 +524,43 @@ const updateUserBillingProfile = async (
     };
   }
 
+  if (updates.plan !== "free") {
+    try {
+      requireLegalAcceptance(matchedUser.profile);
+    } catch (error) {
+      logger.warn("Stripe billing update skipped due to missing legal acceptance.", {
+        uid: matchedUser.uid,
+        stripeCustomerId: identifiers.stripeCustomerId ?? null,
+        stripeSubscriptionId: identifiers.stripeSubscriptionId ?? null,
+        error: error instanceof Error ? error.message : "Legal acceptance required",
+      });
+      return {
+        matchedUid: matchedUser.uid,
+        updatedFields: undefined,
+        skippedReason: "Legal acceptance required",
+      };
+    }
+  }
+
   const normalizedBillingStatus = normalizeBillingStatus(updates.billingStatus);
   const nextPlan = getEffectivePlanForBillingState(
-    normalizeUserPlan(updates.plan),
+    normalizeCurrentPlan(updates.plan),
     normalizedBillingStatus
   );
+  const normalizedAccessPlan = nextPlan === "admin"
+    ? "admin"
+    : nextPlan === "free"
+      ? "free"
+      : "pro";
+  const subscriptionActive = normalizedAccessPlan === "admin" || normalizedAccessPlan === "pro";
   const billingPayload =
     nextPlan === "free"
       ? {
         plan: "free",
         currentPlan: "free",
+        subscriptionActive: false,
+        approved: matchedUser.profile.approved !== false,
+        phoneVerified: matchedUser.profile.phoneVerified === true,
         billingStatus: normalizedBillingStatus ?? "canceled",
         stripeCustomerId: updates.stripeCustomerId ?? matchedUser.profile.stripeCustomerId ?? null,
         stripeSubscriptionId:
@@ -518,8 +570,11 @@ const updateUserBillingProfile = async (
         stripeSubscriptionStatus: updates.stripeSubscriptionStatus ?? normalizedBillingStatus ?? "canceled",
       }
       : {
-        plan: nextPlan,
+        plan: normalizedAccessPlan,
         currentPlan: nextPlan,
+        subscriptionActive,
+        approved: matchedUser.profile.approved !== false,
+        phoneVerified: matchedUser.profile.phoneVerified === true,
         billingStatus: nextPlan === "pro" || nextPlan === "elite"
           ? normalizedBillingStatus ?? "active"
           : normalizedBillingStatus,
@@ -536,9 +591,10 @@ const updateUserBillingProfile = async (
 
   const currentPayload = {
     plan: normalizeUserPlan(matchedUser.profile.plan),
-    currentPlan: matchedUser.profile.currentPlan
-      ? normalizeUserPlan(matchedUser.profile.currentPlan)
-      : normalizeUserPlan(matchedUser.profile.plan),
+    currentPlan: normalizeCurrentPlan(matchedUser.profile.currentPlan ?? matchedUser.profile.plan),
+    subscriptionActive: matchedUser.profile.subscriptionActive === true,
+    approved: matchedUser.profile.approved !== false,
+    phoneVerified: matchedUser.profile.phoneVerified === true,
     billingStatus: normalizeBillingStatus(matchedUser.profile.billingStatus) ?? null,
     stripeCustomerId: matchedUser.profile.stripeCustomerId ?? null,
     stripeSubscriptionId: matchedUser.profile.stripeSubscriptionId ?? null,
@@ -555,7 +611,10 @@ const updateUserBillingProfile = async (
     };
   }
 
-  await matchedUser.reference.set(billingPayload, { merge: true });
+  await matchedUser.reference.set({
+    ...billingPayload,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
 
   return {
     matchedUid: matchedUser.uid,
@@ -628,6 +687,22 @@ const normalizeUserPlan = (value: unknown): UserPlan => {
     return "admin";
   }
 
+  if (value === "pro") {
+    return "pro";
+  }
+
+  return "free";
+};
+
+const normalizeUserRole = (value: unknown): UserRole => {
+  return value === "admin" ? "admin" : "user";
+};
+
+const normalizeCurrentPlan = (value: unknown): CurrentPlan => {
+  if (value === "admin") {
+    return "admin";
+  }
+
   if (value === "elite") {
     return "elite";
   }
@@ -639,18 +714,14 @@ const normalizeUserPlan = (value: unknown): UserPlan => {
   return "free";
 };
 
-const normalizeUserRole = (value: unknown): UserRole => {
-  return value === "admin" ? "admin" : "member";
-};
-
 const normalizeBillingStatus = (value: unknown) => {
   return typeof value === "string" ? value.trim().toLowerCase() : undefined;
 };
 
 const getEffectivePlanForBillingState = (
-  requestedPlan: UserPlan,
+  requestedPlan: CurrentPlan,
   billingStatus?: string
-): UserPlan => {
+): CurrentPlan => {
   if (requestedPlan === "admin") {
     return "admin";
   }

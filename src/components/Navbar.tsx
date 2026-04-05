@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/auth-context";
-import { logout } from "../lib/auth";
-import { getUserProfile, hasActiveBillingAccess } from "../lib/firestore";
-import type { UserPlan, UserRole, UserProfile } from "../lib/firestore";
+import { signOut } from "../lib/auth";
+import { normalizeManagedPlan } from "../lib/userProfiles";
 
 const publicNavItems = [
   { label: "Home", to: "/" },
@@ -16,63 +15,14 @@ const publicNavItems = [
 
 function Navbar() {
   const navigate = useNavigate();
-  const { currentUser, loading } = useAuth();
-  const [plan, setPlan] = useState<UserPlan>("free");
-  const [role, setRole] = useState<UserRole>("member");
-  const [billingStatus, setBillingStatus] = useState<UserProfile["billingStatus"]>(undefined);
-  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const { currentUser, loading, profile, isAdmin, hasSubscriptionAccess } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadProfile = async () => {
-      if (!currentUser) {
-        if (isMounted) {
-          setPlan("free");
-          setRole("member");
-          setBillingStatus(undefined);
-          setIsProfileLoading(false);
-        }
-
-        return;
-      }
-
-      setIsProfileLoading(true);
-
-      try {
-        const profile = await getUserProfile(currentUser.uid);
-
-        if (isMounted) {
-          setPlan(profile?.plan ?? "free");
-          setRole(profile?.role ?? "member");
-          setBillingStatus(profile?.billingStatus);
-        }
-      } catch {
-        if (isMounted) {
-          setPlan("free");
-          setRole("member");
-          setBillingStatus(undefined);
-        }
-      } finally {
-        if (isMounted) {
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
 
     try {
-      await logout();
+      await signOut();
       navigate("/", { replace: true });
     } finally {
       setIsLoggingOut(false);
@@ -80,16 +30,13 @@ function Navbar() {
   };
 
   const isSignedIn = !!currentUser;
-  const showAdminLink = isSignedIn && role === "admin";
-  const showDashboardLink =
-    isSignedIn
-    && !isProfileLoading
-    && hasActiveBillingAccess({
-      plan,
-      role,
-      billingStatus,
-    });
-  const accountLabel = role === "admin" ? "Administrator" : `${capitalizePlan(plan)} plan`;
+  const showAdminLink = isSignedIn && isAdmin;
+  const showDashboardLink = isSignedIn;
+  const accountLabel = isAdmin
+    ? "Administrator"
+    : hasSubscriptionAccess
+      ? `${capitalizePlan(normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free"))} member`
+      : "Free account";
 
   return (
     <header
@@ -158,6 +105,11 @@ function Navbar() {
                     Dashboard
                   </NavLink>
                 ) : null}
+                {showDashboardLink ? (
+                  <NavLink to="/dashboard/automation" style={({ isActive }) => navLinkStyle(isActive)}>
+                    Automation
+                  </NavLink>
+                ) : null}
                 {showAdminLink ? (
                   <NavLink to="/admin/signals" style={({ isActive }) => navLinkStyle(isActive)}>
                     Review
@@ -170,7 +122,7 @@ function Navbar() {
           {isSignedIn ? (
             <>
               <span style={accountPillStyle}>
-                {isProfileLoading ? "Account" : accountLabel}
+                {loading ? "Account" : accountLabel}
               </span>
               <button
                 type="button"

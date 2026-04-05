@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/auth-context";
-import { getUserProfile } from "../lib/firestore";
-import type { UserPlan } from "../lib/firestore";
+import { getUserProfile, normalizeManagedPlan } from "../lib/userProfiles";
 
 function UpgradeSuccessPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, profile, refreshProfile } = useAuth();
   const [searchParams] = useSearchParams();
-  const [currentPlan, setCurrentPlan] = useState<UserPlan>("free");
+  const [currentPlan, setCurrentPlan] = useState(
+    normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free")
+  );
   const [billingStatus, setBillingStatus] = useState("");
   const requestedPlan = searchParams.get("plan") === "elite" ? "elite" : "pro";
 
@@ -27,10 +28,11 @@ function UpgradeSuccessPage() {
           return;
         }
 
-        setCurrentPlan(profile?.plan ?? "free");
+        setCurrentPlan(normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free"));
         setBillingStatus(profile?.billingStatus ?? "");
 
-        if ((profile?.plan ?? "free") === requestedPlan || attempts >= 10) {
+        if (normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free") === requestedPlan || attempts >= 10) {
+          await refreshProfile();
           return;
         }
       } finally {
@@ -48,7 +50,7 @@ function UpgradeSuccessPage() {
     return () => {
       isMounted = false;
     };
-  }, [currentUser, requestedPlan]);
+  }, [currentUser, refreshProfile, requestedPlan]);
 
   const accessUpdated = currentPlan === requestedPlan;
 

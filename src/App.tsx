@@ -9,7 +9,7 @@ import FaqPage from "./pages/FaqPage";
 import ContactPage from "./pages/ContactPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
-import DashboardPage from "./pages/DashboardPage";
+import DashboardPage, { DashboardHomeContent } from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminSignalsPage from "./pages/AdminSignalsPage";
@@ -108,19 +108,19 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/dashboard">
-            <Route
-              index
-              element={
-                <ProtectedRoute requireLegalConsent>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute requireLegalConsent>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardHomeContent />} />
             <Route
               path="performance"
               element={
-                <ProtectedRoute requireSubscription requireLegalConsent>
+                <ProtectedRoute requireSubscription>
                   <PerformanceOverview />
                 </ProtectedRoute>
               }
@@ -128,7 +128,7 @@ function App() {
             <Route
               path="trades"
               element={
-                <ProtectedRoute requireSubscription requireLegalConsent>
+                <ProtectedRoute requireSubscription>
                   <TradesPage />
                 </ProtectedRoute>
               }
@@ -136,7 +136,7 @@ function App() {
             <Route
               path="analytics"
               element={
-                <ProtectedRoute requireSubscription requireLegalConsent>
+                <ProtectedRoute requireSubscription>
                   <AnalyticsPage />
                 </ProtectedRoute>
               }
@@ -144,9 +144,7 @@ function App() {
             <Route
               path="automation"
               element={
-                <ProtectedRoute requireLegalConsent>
-                  <AutomationPage />
-                </ProtectedRoute>
+                <AutomationPage />
               }
             />
           </Route>

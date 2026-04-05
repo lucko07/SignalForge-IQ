@@ -1,16 +1,20 @@
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { getAuthErrorMessage, signup } from "../lib/auth";
-import { createUserProfile } from "../lib/firestore";
+import LegalConsentField from "../components/LegalConsentField";
+import { useAuth } from "../context/auth-context";
+import { getAuthErrorMessage, signUp } from "../lib/auth";
+import { CURRENT_TERMS_VERSION } from "../lib/userProfiles";
 
 function SignupPage() {
   const navigate = useNavigate();
+  const { refreshProfile } = useAuth();
   const [searchParams] = useSearchParams();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const requestedPlan = searchParams.get("plan")?.trim().toLowerCase();
@@ -41,19 +45,19 @@ function SignupPage() {
       return;
     }
 
+    if (!acceptedLegal) {
+      setError("You must accept Terms to continue");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const credential = await signup(email.trim(), password, fullName.trim());
-
-      await createUserProfile({
-        uid: credential.user.uid,
-        fullName: fullName.trim(),
-        email: credential.user.email ?? email.trim(),
-        plan: "free",
-        role: "member",
+      await signUp(email.trim(), password, fullName.trim(), {
+        acceptLegal: true,
+        termsVersion: CURRENT_TERMS_VERSION,
       });
-
+      await refreshProfile();
       navigate("/dashboard");
     } catch (signupError) {
       setError(getAuthErrorMessage(signupError));
@@ -132,7 +136,18 @@ function SignupPage() {
           />
         </label>
 
-        {error ? (
+        <LegalConsentField
+          checked={acceptedLegal}
+          onChange={(nextValue) => {
+            setAcceptedLegal(nextValue);
+            if (error === "You must accept Terms to continue") {
+              setError("");
+            }
+          }}
+          error={error === "You must accept Terms to continue" ? error : ""}
+        />
+
+        {error && error !== "You must accept Terms to continue" ? (
           <p
             style={{
               margin: 0,
@@ -148,15 +163,15 @@ function SignupPage() {
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !acceptedLegal}
           style={{
             border: 0,
             borderRadius: "12px",
             padding: "0.95rem 1rem",
-            backgroundColor: isSubmitting ? "#98a2b3" : "#101828",
+            backgroundColor: isSubmitting || !acceptedLegal ? "#98a2b3" : "#101828",
             color: "#ffffff",
             fontWeight: 700,
-            cursor: isSubmitting ? "not-allowed" : "pointer",
+            cursor: isSubmitting || !acceptedLegal ? "not-allowed" : "pointer",
           }}
         >
           {isSubmitting ? "Creating account..." : "Create account"}

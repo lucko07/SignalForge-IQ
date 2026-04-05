@@ -1,29 +1,17 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
 import type { Timestamp } from "firebase/firestore";
 import SignalCard from "../components/SignalCard";
 import TradingDisclaimer from "../components/TradingDisclaimer";
 import { useAuth } from "../context/auth-context";
-import { logout } from "../lib/auth";
+import { signOut } from "../lib/auth";
 import { openBillingPortal } from "../lib/billing";
 import {
   getPerformanceSummary,
-  getUserProfile,
-  hasActiveBillingAccess,
-  isStripeManagedPlan,
   subscribeToSignals,
 } from "../lib/firestore";
-import type { PerformanceSummary, Signal, UserPlan, UserProfile, UserRole } from "../lib/firestore";
-
-type DashboardProfile = {
-  plan: UserPlan;
-  role: UserRole;
-  currentPlan?: UserPlan;
-  billingStatus?: string;
-  stripeCustomerId?: string;
-  cancelAtPeriodEnd?: boolean;
-  subscriptionEndsAt?: Timestamp | null;
-};
+import type { PerformanceSummary, Signal } from "../lib/firestore";
+import { isStripeManagedUser, normalizeManagedPlan } from "../lib/userProfiles";
 
 type AccountStatusBannerState = {
   tone: "admin" | "neutral" | "success" | "warning";
@@ -31,13 +19,29 @@ type AccountStatusBannerState = {
 };
 
 function DashboardPage() {
+  return (
+    <section
+      style={{
+        maxWidth: "860px",
+        margin: "0 auto",
+        display: "grid",
+        gap: "1.25rem",
+      }}
+    >
+      <Outlet />
+    </section>
+  );
+}
+
+export function DashboardHomeContent() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
-  const [profile, setProfile] = useState<DashboardProfile>({
-    plan: "free",
-    role: "member",
-  });
-  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const {
+    currentUser,
+    profile,
+    loading,
+    hasSubscriptionAccess,
+    isAdmin,
+  } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isOpeningBillingPortal, setIsOpeningBillingPortal] = useState(false);
   const [liveSignals, setLiveSignals] = useState<Signal[]>([]);
@@ -55,50 +59,15 @@ function DashboardPage() {
   const [isPerformanceLoading, setIsPerformanceLoading] = useState(true);
   const [performanceError, setPerformanceError] = useState("");
   const [billingActionError, setBillingActionError] = useState("");
-  const [profileLoadError, setProfileLoadError] = useState("");
 
   useEffect(() => {
-    let isMounted = true;
+    if (!hasSubscriptionAccess) {
+      setLiveSignals([]);
+      setSignalsError("");
+      setIsSignalsLoading(false);
+      return undefined;
+    }
 
-    const loadProfile = async () => {
-      if (!currentUser) {
-        return;
-      }
-
-      try {
-        const userProfile = await getUserProfile(currentUser.uid);
-
-        if (userProfile && isMounted) {
-          setProfile({
-            plan: userProfile.plan,
-            role: userProfile.role,
-            currentPlan: userProfile.currentPlan,
-            billingStatus: userProfile.billingStatus,
-            stripeCustomerId: userProfile.stripeCustomerId,
-            cancelAtPeriodEnd: userProfile.cancelAtPeriodEnd,
-            subscriptionEndsAt: userProfile.subscriptionEndsAt,
-          });
-          setProfileLoadError("");
-        }
-      } catch {
-        if (isMounted) {
-          setProfileLoadError("We could not refresh your account details right now.");
-        }
-      } finally {
-        if (isMounted) {
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser]);
-
-  useEffect(() => {
     const unsubscribe = subscribeToSignals(
       (loadedSignals) => {
         setLiveSignals(loadedSignals);
@@ -114,9 +83,24 @@ function DashboardPage() {
     );
 
     return unsubscribe;
-  }, []);
+  }, [hasSubscriptionAccess]);
 
   useEffect(() => {
+    if (!hasSubscriptionAccess) {
+      setPerformanceSummary({
+        totalClosedSignals: 0,
+        wins: 0,
+        losses: 0,
+        breakevenCount: 0,
+        cancelledCount: 0,
+        winRate: 0,
+        averagePnlPercent: 0,
+      });
+      setPerformanceError("");
+      setIsPerformanceLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     const loadPerformanceSummary = async () => {
@@ -143,29 +127,18 @@ function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [liveSignals]);
+  }, [hasSubscriptionAccess, liveSignals]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
 
     try {
-      await logout();
+      await signOut();
       navigate("/login", { replace: true });
     } finally {
       setIsLoggingOut(false);
     }
   };
-
-  const usingFallbackSignals = !isSignalsLoading && liveSignals.length === 0;
-  const visibleSignals = liveSignals.length > 0 ? liveSignals : sampleSignals;
-  const recentClosedSignals = liveSignals
-    .filter((signal) => signal.status === "CLOSED" || signal.status === "CANCELLED")
-    .slice(0, 5);
-  const isAdminUser = profile.role === "admin";
-  const isStripeManagedUser = isStripeManagedPlan(profile);
-  const hasPaidBillingAccess = hasActiveBillingAccess(profile as UserProfile);
-  const accountStatusBanner = getAccountStatusBannerState(profile, isProfileLoading);
-  const membershipLabel = isAdminUser ? "Administrator" : `${capitalizePlan(profile.plan)} member`;
 
   const handleManageSubscription = async () => {
     setBillingActionError("");
@@ -183,15 +156,21 @@ function DashboardPage() {
     }
   };
 
+  const usingFallbackSignals = !isSignalsLoading && liveSignals.length === 0;
+  const visibleSignals = liveSignals.length > 0 ? liveSignals : sampleSignals;
+  const recentClosedSignals = liveSignals
+    .filter((signal) => signal.status === "CLOSED" || signal.status === "CANCELLED")
+    .slice(0, 5);
+  const managedPlan = normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free");
+  const membershipLabel = isAdmin
+    ? "Administrator"
+    : hasSubscriptionAccess
+      ? `${capitalizePlan(managedPlan)} member`
+      : "Free member";
+  const accountStatusBanner = getAccountStatusBannerState(profile, loading);
+
   return (
-    <section
-      style={{
-        maxWidth: "860px",
-        margin: "0 auto",
-        display: "grid",
-        gap: "1.25rem",
-      }}
-    >
+    <>
       <h1>Dashboard</h1>
       <div
         style={{
@@ -208,14 +187,16 @@ function DashboardPage() {
           <strong>Email:</strong> {currentUser?.email ?? "Unavailable"}
         </p>
         <p style={{ margin: "0.5rem 0" }}>
-          <strong>Plan:</strong> {isProfileLoading ? "Loading..." : profile.plan}
+          <strong>Plan:</strong> {loading ? "Loading..." : managedPlan}
         </p>
         <p style={{ margin: "0.5rem 0 1.25rem" }}>
-          <strong>Access:</strong> {isProfileLoading ? "Loading..." : membershipLabel}
+          <strong>Access:</strong> {loading ? "Loading..." : membershipLabel}
         </p>
-        {!isProfileLoading ? (
+        {!loading ? (
           <p style={{ margin: "0 0 1.25rem", color: "#475467" }}>
-            {isAdminUser ? "You can manage member access and review signals from this account." : "Your membership and signal access are shown below."}
+            {isAdmin
+              ? "You can manage member access and review signals from this account."
+              : "Authentication is managed by Firebase Auth, while your plan and access metadata come from Firestore."}
           </p>
         ) : null}
         <button
@@ -241,14 +222,30 @@ function DashboardPage() {
         <p style={{ margin: 0 }}>{accountStatusBanner.message}</p>
       </div>
 
-      {profileLoadError ? (
-        <div style={accountStatusBannerStyle("neutral")}>
-          <strong style={{ fontSize: "1rem" }}>Account details</strong>
-          <p style={{ margin: 0 }}>{profileLoadError}</p>
+      <div style={sectionCardStyle}>
+        <div style={sectionHeaderStyle}>
+          <div>
+            <h2 style={{ margin: 0, color: "#101828" }}>Performance Center</h2>
+            <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
+              Open the member track record pages for overview metrics, trades, and deeper analytics.
+            </p>
+          </div>
         </div>
-      ) : null}
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <Link to="/dashboard/performance" style={secondaryLinkStyle}>
+            Performance overview
+          </Link>
+          <Link to="/dashboard/trades" style={secondaryLinkStyle}>
+            Trades
+          </Link>
+          <Link to="/dashboard/analytics" style={secondaryLinkStyle}>
+            Analytics
+          </Link>
+        </div>
+        {!hasSubscriptionAccess ? <UpgradePrompt /> : null}
+      </div>
 
-      {isAdminUser ? (
+      {isAdmin ? (
         <div
           style={{
             padding: "1.5rem",
@@ -301,25 +298,25 @@ function DashboardPage() {
               Your plan access and billing status are shown here.
             </p>
             <p style={{ margin: "0.4rem 0 0", color: "#667085" }}>
-              Pro includes protected dashboard access, live signals, closed trade history, and performance tracking.
-              Elite includes everything in Pro plus higher-tier premium access and future expanded member benefits.
+              Pro includes protected member-only signal access. Elite remains available as a
+              billing tier while the core access model stays clean and predictable.
             </p>
           </div>
 
           <div style={statsGridStyle}>
-            <StatCard label="Current Plan" value={isProfileLoading ? "Loading..." : (profile.currentPlan ?? profile.plan)} />
-            <StatCard label="Billing Status" value={isProfileLoading ? "Loading..." : (profile.billingStatus ?? "Not billed")} />
+            <StatCard label="Current Plan" value={loading ? "Loading..." : managedPlan} />
+            <StatCard label="Billing Status" value={loading ? "Loading..." : (profile?.billingStatus ?? "Not billed")} />
             <StatCard
-              label="Billing Access"
-              value={isProfileLoading ? "Loading..." : (hasPaidBillingAccess ? "Active" : "Upgrade required")}
+              label="Membership Access"
+              value={loading ? "Loading..." : (hasSubscriptionAccess ? "Active" : "Upgrade required")}
             />
             <StatCard
               label="Billing Setup"
-              value={isProfileLoading ? "Loading..." : (profile.stripeCustomerId ? "Connected" : "Not linked")}
+              value={loading ? "Loading..." : (profile?.stripeCustomerId ? "Connected" : "Not linked")}
             />
           </div>
 
-          {isStripeManagedUser ? (
+          {isStripeManagedUser(profile) ? (
             <div style={billingNoticeStyle}>
               <strong>Billing Management</strong>
               <p style={{ margin: 0 }}>
@@ -334,7 +331,7 @@ function DashboardPage() {
                 >
                   {isOpeningBillingPortal ? "Opening billing..." : "Manage subscription"}
                 </button>
-                {profile.plan === "pro" ? (
+                {managedPlan === "pro" ? (
                   <Link to="/upgrade?plan=elite" style={secondaryLinkStyle}>
                     Upgrade to Elite
                   </Link>
@@ -349,35 +346,22 @@ function DashboardPage() {
         </div>
       )}
 
-      <div
-        style={{
-          padding: "1.5rem",
-          border: "1px solid #d0d5dd",
-          borderRadius: "16px",
-          backgroundColor: "#f8fafc",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "1rem",
-            flexWrap: "wrap",
-            marginBottom: "1rem",
-          }}
-        >
+      <section style={sectionCardStyle}>
+        <div style={sectionHeaderStyle}>
           <div>
             <h2 style={{ margin: 0, color: "#101828" }}>Performance Summary</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-              Closed-signal performance based on stored outcomes and realized PnL.
+              {hasSubscriptionAccess
+                ? "Closed-signal performance based on stored outcomes and realized PnL."
+                : "Upgrade to Pro to unlock member-only performance history."}
             </p>
           </div>
         </div>
 
-        {isPerformanceLoading ? <p style={{ margin: 0 }}>Loading performance summary...</p> : null}
+        {!hasSubscriptionAccess ? <UpgradePrompt /> : null}
+        {hasSubscriptionAccess && isPerformanceLoading ? <p style={{ margin: 0 }}>Loading performance summary...</p> : null}
 
-        {!isPerformanceLoading ? (
+        {hasSubscriptionAccess && !isPerformanceLoading ? (
           <div style={statsGridStyle}>
             <StatCard label="Closed Signals" value={String(performanceSummary.totalClosedSignals)} />
             <StatCard label="Win Rate" value={`${performanceSummary.winRate.toFixed(2)}%`} />
@@ -391,36 +375,22 @@ function DashboardPage() {
           </div>
         ) : null}
 
-        {performanceError ? (
+        {hasSubscriptionAccess && performanceError ? (
           <p style={{ margin: "1rem 0 0", color: "#b42318" }}>{performanceError}</p>
         ) : null}
-      </div>
+      </section>
 
-      <div
-        style={{
-          padding: "1.5rem",
-          border: "1px solid #d0d5dd",
-          borderRadius: "16px",
-          backgroundColor: "#f8fafc",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "1rem",
-            flexWrap: "wrap",
-            marginBottom: "1rem",
-          }}
-        >
+      <section style={sectionCardStyle}>
+        <div style={sectionHeaderStyle}>
           <div>
             <h2 style={{ margin: 0, color: "#101828" }}>Trading Signals</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-              Live signals are shown here first.
+              {hasSubscriptionAccess
+                ? "Live signals are shown here first."
+                : "Upgrade to Pro to unlock the full member signal feed."}
             </p>
           </div>
-          {!isSignalsLoading && liveSignals.length > 0 ? (
+          {hasSubscriptionAccess && !isSignalsLoading && liveSignals.length > 0 ? (
             <span
               style={{
                 padding: "0.4rem 0.75rem",
@@ -436,9 +406,10 @@ function DashboardPage() {
           ) : null}
         </div>
 
-        {isSignalsLoading ? <p style={{ margin: 0 }}>Loading signals...</p> : null}
+        {!hasSubscriptionAccess ? <UpgradePrompt /> : null}
+        {hasSubscriptionAccess && isSignalsLoading ? <p style={{ margin: 0 }}>Loading signals...</p> : null}
 
-        {!isSignalsLoading && usingFallbackSignals ? (
+        {hasSubscriptionAccess && !isSignalsLoading && usingFallbackSignals ? (
           <div
             style={{
               display: "grid",
@@ -458,7 +429,7 @@ function DashboardPage() {
           </div>
         ) : null}
 
-        {!isSignalsLoading && visibleSignals.length > 0 ? (
+        {hasSubscriptionAccess && !isSignalsLoading && visibleSignals.length > 0 ? (
           <div style={{ display: "grid", gap: "1rem" }}>
             {visibleSignals.map((signal) => (
               <SignalCard key={signal.id} signal={signal} />
@@ -469,24 +440,21 @@ function DashboardPage() {
         <div style={{ marginTop: "1rem" }}>
           <TradingDisclaimer />
         </div>
-      </div>
+      </section>
 
-      <div
-        style={{
-          padding: "1.5rem",
-          border: "1px solid #d0d5dd",
-          borderRadius: "16px",
-          backgroundColor: "#f8fafc",
-        }}
-      >
+      <section style={sectionCardStyle}>
         <div style={{ marginBottom: "1rem" }}>
           <h2 style={{ margin: 0, color: "#101828" }}>Recent Closed Signals</h2>
           <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-            Most recent closed or cancelled trades from the live signal feed.
+            {hasSubscriptionAccess
+              ? "Most recent closed or cancelled trades from the live signal feed."
+              : "Upgrade to Pro to unlock closed trade history."}
           </p>
         </div>
 
-        {!isSignalsLoading && recentClosedSignals.length > 0 ? (
+        {!hasSubscriptionAccess ? <UpgradePrompt /> : null}
+
+        {hasSubscriptionAccess && !isSignalsLoading && recentClosedSignals.length > 0 ? (
           <div style={{ display: "grid", gap: "1rem" }}>
             {recentClosedSignals.map((signal) => (
               <SignalCard key={`closed-${signal.id}`} signal={signal} />
@@ -494,13 +462,29 @@ function DashboardPage() {
           </div>
         ) : null}
 
-        {!isSignalsLoading && recentClosedSignals.length === 0 ? (
+        {hasSubscriptionAccess && !isSignalsLoading && recentClosedSignals.length === 0 ? (
           <p style={{ margin: 0, color: "#475467" }}>
             No closed signals yet. Closed trades will appear here once outcomes are recorded.
           </p>
         ) : null}
+      </section>
+    </>
+  );
+}
+
+function UpgradePrompt() {
+  return (
+    <div style={billingNoticeStyle}>
+      <strong>Member access required</strong>
+      <p style={{ margin: 0 }}>
+        Your account is authenticated, but this section is reserved for active Pro members.
+      </p>
+      <div>
+        <Link to="/pricing" style={secondaryLinkStyle}>
+          View plans
+        </Link>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -526,6 +510,22 @@ function StatCard({ label, value }: StatCardProps) {
     </div>
   );
 }
+
+const sectionCardStyle = {
+  padding: "1.5rem",
+  border: "1px solid #d0d5dd",
+  borderRadius: "16px",
+  backgroundColor: "#f8fafc",
+};
+
+const sectionHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: "1rem",
+  flexWrap: "wrap" as const,
+  marginBottom: "1rem",
+};
 
 const statsGridStyle = {
   display: "grid",
@@ -625,17 +625,17 @@ const formatSubscriptionEndDate = (value?: Timestamp | null) => {
 };
 
 const getAccountStatusBannerState = (
-  profile: DashboardProfile,
+  profile: ReturnType<typeof useAuth>["profile"],
   isProfileLoading: boolean
 ): AccountStatusBannerState => {
-  if (isProfileLoading) {
+  if (isProfileLoading || !profile) {
     return {
       tone: "neutral",
       message: "Checking your account status.",
     };
   }
 
-  const currentPlan = profile.currentPlan ?? profile.plan;
+  const currentPlan = normalizeManagedPlan(profile.currentPlan ?? profile.plan);
   const planName = currentPlan === "elite" ? "Elite" : "Pro";
   const scheduledCancellationDate = formatSubscriptionEndDate(profile.subscriptionEndsAt);
   const hasBillingIssue = isBillingIssueStatus(profile.billingStatus);
@@ -647,10 +647,10 @@ const getAccountStatusBannerState = (
     };
   }
 
-  if (currentPlan === "free") {
+  if (!profile.subscriptionActive) {
     return {
       tone: "neutral",
-      message: "You are on the Free plan. Upgrade to Pro or Elite to unlock the protected dashboard and full signal access.",
+      message: "You are signed in on the Free plan. Upgrade to Pro or Elite to unlock member-only signal access.",
     };
   }
 

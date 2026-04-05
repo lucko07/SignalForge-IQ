@@ -1,6 +1,7 @@
 import { httpsCallable } from "firebase/functions";
 import { loadStripe } from "@stripe/stripe-js";
-import { functions } from "./firebase";
+import { auth, functions } from "./firebase";
+import { getUserLegalConsentStatus } from "./userProfiles";
 
 type CreateCheckoutSessionPayload = {
   plan: "pro" | "elite";
@@ -33,6 +34,17 @@ export const isSecureCheckoutReady = Boolean(import.meta.env.VITE_STRIPE_PUBLISH
 
 export const startStripeCheckout = async (plan: "pro" | "elite") => {
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error("Sign in to continue.");
+  }
+
+  const { hasAcceptedCurrentTerms } = await getUserLegalConsentStatus(currentUser.uid);
+
+  if (!hasAcceptedCurrentTerms) {
+    throw new Error("You must accept Terms to continue");
+  }
 
   if (!publishableKey) {
     throw new Error("Secure checkout is temporarily unavailable. Please try again later.");

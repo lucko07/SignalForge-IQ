@@ -299,6 +299,9 @@ function AdminSignalsPage() {
           <span style={summaryPillStyle}>
             {approvedSignals.length} approved signal{approvedSignals.length === 1 ? "" : "s"}
           </span>
+          <Link to="/admin/data" style={secondaryLinkStyle}>
+            Data maintenance
+          </Link>
           <Link to="/dashboard" style={secondaryLinkStyle}>
             Back to dashboard
           </Link>

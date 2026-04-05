@@ -268,19 +268,6 @@ function EducationPage() {
         </div>
       </article>
 
-      <article style={disclaimerCardStyle}>
-        <p style={sectionEyebrowStyle}>Important</p>
-        <h2 style={sectionTitleStyle}>Disclaimer</h2>
-        <p style={disclaimerTextStyle}>
-          SignalForge IQ provides educational information only. Nothing on this page
-          should be treated as financial advice, investment advice, or a promise of
-          future performance.
-        </p>
-        <p style={disclaimerTextStyle}>
-          Users remain responsible for their own trading decisions, position sizing,
-          and risk controls.
-        </p>
-      </article>
     </section>
   );
 }
@@ -592,21 +579,6 @@ const membershipCardStyle = {
   borderRadius: "16px",
   border: "1px solid #eaecf0",
   backgroundColor: "#f8fafc",
-};
-
-const disclaimerCardStyle = {
-  display: "grid",
-  gap: "0.6rem",
-  padding: "1.5rem",
-  borderRadius: "24px",
-  border: "1px solid #fecdca",
-  backgroundColor: "#fef3f2",
-};
-
-const disclaimerTextStyle = {
-  margin: 0,
-  color: "#7a271a",
-  lineHeight: 1.75,
 };
 
 export default EducationPage;

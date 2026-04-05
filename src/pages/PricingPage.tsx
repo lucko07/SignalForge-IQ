@@ -1,9 +1,7 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment } from "react";
 import { Link } from "react-router-dom";
-import TradingDisclaimer from "../components/TradingDisclaimer";
 import { useAuth } from "../context/auth-context";
-import { getUserProfile } from "../lib/firestore";
-import type { UserPlan } from "../lib/firestore";
+import { normalizeManagedPlan } from "../lib/userProfiles";
 
 type Tier = {
   name: "Free" | "Pro" | "Elite";
@@ -138,50 +136,11 @@ const planComparisonRows = [
 ] as const;
 
 function PricingPage() {
-  const { currentUser, loading } = useAuth();
-  const [currentPlan, setCurrentPlan] = useState<UserPlan>("free");
-  const [isProfileLoading, setIsProfileLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadProfile = async () => {
-      if (!currentUser) {
-        if (isMounted) {
-          setCurrentPlan("free");
-          setIsProfileLoading(false);
-        }
-
-        return;
-      }
-
-      try {
-        const profile = await getUserProfile(currentUser.uid);
-
-        if (isMounted) {
-          setCurrentPlan(profile?.plan ?? "free");
-        }
-      } catch {
-        if (isMounted) {
-          setCurrentPlan("free");
-        }
-      } finally {
-        if (isMounted) {
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser]);
-
+  const { currentUser, loading, profile } = useAuth();
   const isLoggedIn = !!currentUser;
+  const currentPlan = normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free");
   const effectivePlan = currentPlan === "admin" ? "elite" : currentPlan;
-  const isLoadingPlan = loading || (isLoggedIn && isProfileLoading);
+  const isLoadingPlan = loading;
 
   return (
     <section style={pageStyle}>
@@ -301,8 +260,6 @@ function PricingPage() {
           ))}
         </div>
       </div>
-
-      <TradingDisclaimer />
 
       <div style={faqCardStyle}>
         <h2 style={faqTitleStyle}>Common Questions</h2>

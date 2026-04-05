@@ -3,35 +3,69 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   signInWithEmailAndPassword,
-  signOut,
+  signOut as firebaseSignOut,
   sendPasswordResetEmail,
 } from "firebase/auth";
 import type { AuthError } from "firebase/auth";
+import {
+  acceptLegalDocuments,
+  getOrCreateUserProfile,
+  CURRENT_TERMS_VERSION,
+  normalizeEmail,
+} from "./userProfiles";
+import { deleteUser } from "firebase/auth";
 
-export const signup = async (
+export const signUp = async (
   email: string,
   password: string,
-  fullName?: string
-) => {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-
-  if (fullName) {
-    await updateProfile(credential.user, { displayName: fullName });
+  fullName?: string,
+  options?: {
+    acceptLegal?: boolean;
+    termsVersion?: string;
   }
+) => {
+  const normalizedEmail = normalizeEmail(email);
+  const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
 
+  try {
+    if (fullName) {
+      await updateProfile(credential.user, { displayName: fullName });
+    }
+
+    await getOrCreateUserProfile(credential.user);
+
+    if (options?.acceptLegal) {
+      await acceptLegalDocuments(
+        credential.user.uid,
+        options.termsVersion ?? CURRENT_TERMS_VERSION
+      );
+    }
+
+    return credential;
+  } catch (error) {
+    try {
+      await deleteUser(credential.user);
+    } catch {
+      // If cleanup fails, route guards still prevent protected access without consent.
+    }
+
+    throw error;
+  }
+};
+
+export const signIn = async (email: string, password: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+  await getOrCreateUserProfile(credential.user);
   return credential;
 };
 
-export const login = (email: string, password: string) => {
-  return signInWithEmailAndPassword(auth, email, password);
+export const signOut = () => {
+  return firebaseSignOut(auth);
 };
 
-export const logout = () => {
-  return signOut(auth);
-};
-
-export const requestPasswordReset = (email: string) => {
-  return sendPasswordResetEmail(auth, email);
+export const resetPassword = (email: string) => {
+  return sendPasswordResetEmail(auth, normalizeEmail(email));
 };
 
 export const getAuthErrorMessage = (error: unknown) => {
@@ -60,3 +94,5 @@ export const getAuthErrorMessage = (error: unknown) => {
       return "Something went wrong. Please try again.";
   }
 };
+
+export { getOrCreateUserProfile };

@@ -5,8 +5,8 @@ const footerLinks = [
   { label: "Pricing", to: "/pricing" },
   { label: "Signals", to: "/signals" },
   { label: "Contact", to: "/contact" },
-  { label: "Terms", to: "/terms" },
-  { label: "Privacy", to: "/privacy" },
+  { label: "Terms of Service", to: "/terms" },
+  { label: "Privacy Policy", to: "/privacy" },
 ] as const;
 
 function Footer() {

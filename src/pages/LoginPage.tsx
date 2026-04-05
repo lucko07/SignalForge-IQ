@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { getAuthErrorMessage, login, requestPasswordReset } from "../lib/auth";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { getAuthErrorMessage, resetPassword, signIn } from "../lib/auth";
 
 function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -32,8 +33,8 @@ function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login(email.trim(), password);
-      navigate("/dashboard");
+      await signIn(email.trim(), password);
+      navigate(normalizeNextPath(searchParams.get("next")), { replace: true });
     } catch (loginError) {
       setError(getAuthErrorMessage(loginError));
     } finally {
@@ -54,7 +55,7 @@ function LoginPage() {
     setIsResettingPassword(true);
 
     try {
-      await requestPasswordReset(email.trim());
+      await resetPassword(email.trim());
       setResetMessage("Password reset email sent. Check your inbox for the reset link.");
     } catch (resetRequestError) {
       setResetError(getAuthErrorMessage(resetRequestError));
@@ -182,6 +183,14 @@ function LoginPage() {
     </section>
   );
 }
+
+const normalizeNextPath = (value: string | null) => {
+  if (!value || !value.startsWith("/")) {
+    return "/dashboard";
+  }
+
+  return value;
+};
 
 const inputStyle = {
   width: "100%",

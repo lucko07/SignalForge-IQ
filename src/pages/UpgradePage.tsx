@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import LegalConsentField from "../components/LegalConsentField";
 import { useAuth } from "../context/auth-context";
 import { isSecureCheckoutReady, startStripeCheckout } from "../lib/billing";
-import { getUserProfile } from "../lib/firestore";
-import type { UserPlan } from "../lib/firestore";
+import {
+  acceptLegalDocuments,
+  CURRENT_TERMS_VERSION,
+  normalizeManagedPlan,
+} from "../lib/userProfiles";
 
 type ManagedPlan = "pro" | "elite";
 
@@ -30,58 +34,45 @@ const planDetails: Record<ManagedPlan, { priceLabel: string; summary: string; fe
 };
 
 function UpgradePage() {
-  const { currentUser } = useAuth();
+  const { currentUser, loading, profile, hasLegalConsent, refreshProfile } = useAuth();
   const [searchParams] = useSearchParams();
-  const [currentPlan, setCurrentPlan] = useState<UserPlan>("free");
-  const [billingStatus, setBillingStatus] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [error, setError] = useState("");
   const requestedPlan = normalizeRequestedPlan(searchParams.get("plan"));
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadProfile = async () => {
-      if (!currentUser) {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-
-        return;
-      }
-
-      try {
-        const profile = await getUserProfile(currentUser.uid);
-
-        if (isMounted) {
-          setCurrentPlan(profile?.plan ?? "free");
-          setBillingStatus(profile?.billingStatus ?? "");
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser]);
+  const currentPlan = normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free");
+  const billingStatus = profile?.billingStatus ?? "";
 
   const isAlreadyOnRequestedPlan = currentPlan === requestedPlan;
   const isDowngradeBlocked = currentPlan === "elite" && requestedPlan === "pro";
   const canCheckout =
-    isSecureCheckoutReady && !isLoading && !isAlreadyOnRequestedPlan && !isDowngradeBlocked;
+    isSecureCheckoutReady
+    && !loading
+    && !isAlreadyOnRequestedPlan
+    && !isDowngradeBlocked
+    && (hasLegalConsent || acceptedLegal);
 
   const handleCheckout = async () => {
     setError("");
+
+    if (!hasLegalConsent && !acceptedLegal) {
+      setError("You must accept Terms to continue");
+      return;
+    }
+
+    if (!currentUser) {
+      setError("Sign in to continue.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
+      if (!hasLegalConsent) {
+        await acceptLegalDocuments(currentUser.uid, CURRENT_TERMS_VERSION);
+        await refreshProfile();
+      }
+
       await startStripeCheckout(requestedPlan);
     } catch (checkoutError) {
       const message =
@@ -104,7 +95,7 @@ function UpgradePage() {
 
       <div style={contentCardStyle}>
         <div style={summaryGridStyle}>
-          <SummaryItem label="Current plan" value={isLoading ? "Loading..." : currentPlan} />
+          <SummaryItem label="Current plan" value={loading ? "Loading..." : currentPlan} />
           <SummaryItem label="Requested plan" value={requestedPlan} />
           <SummaryItem label="Price" value={planDetails[requestedPlan].priceLabel} />
           <SummaryItem label="Billing status" value={billingStatus || "Not subscribed"} />
@@ -150,7 +141,22 @@ function UpgradePage() {
           </div>
         ) : null}
 
-        {error ? <div style={errorBannerStyle}>{error}</div> : null}
+        {!hasLegalConsent ? (
+          <LegalConsentField
+            checked={acceptedLegal}
+            onChange={(nextValue) => {
+              setAcceptedLegal(nextValue);
+              if (error === "You must accept Terms to continue") {
+                setError("");
+              }
+            }}
+            error={error === "You must accept Terms to continue" ? error : ""}
+          />
+        ) : null}
+
+        {error && error !== "You must accept Terms to continue" ? (
+          <div style={errorBannerStyle}>{error}</div>
+        ) : null}
 
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <button

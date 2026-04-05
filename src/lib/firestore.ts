@@ -12,68 +12,10 @@ import {
   query,
   type QueryDocumentSnapshot,
   serverTimestamp,
-  setDoc,
-  Timestamp,
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-
-export type UserProfile = {
-  uid: string;
-  fullName: string;
-  email: string;
-  plan: UserPlan;
-  role: UserRole;
-  currentPlan?: UserPlan;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  billingStatus?: string;
-  cancelAtPeriodEnd?: boolean;
-  subscriptionEndsAt?: Timestamp | null;
-};
-
-export const hasActiveBillingAccess = (
-  profile: Pick<UserProfile, "plan" | "role" | "billingStatus"> | null
-) => {
-  if (!profile) {
-    return false;
-  }
-
-  if (profile.role === "admin" || profile.plan === "admin") {
-    return true;
-  }
-
-  if (profile.plan !== "pro" && profile.plan !== "elite") {
-    return false;
-  }
-
-  if (!profile.billingStatus) {
-    return true;
-  }
-
-  return (
-    profile.billingStatus === "active"
-    || profile.billingStatus === "trialing"
-    || profile.billingStatus === "past_due"
-  );
-};
-
-export const isStripeManagedPlan = (
-  profile: Pick<UserProfile, "plan" | "role"> | null
-) => {
-  if (!profile) {
-    return false;
-  }
-
-  return profile.role !== "admin" && (profile.plan === "pro" || profile.plan === "elite");
-};
-
-export const userPlans = ["free", "pro", "elite", "admin"] as const;
-
-export type UserPlan = (typeof userPlans)[number];
-
-export type UserRole = "member" | "admin";
 
 export const signalStatuses = [
   "PENDING",
@@ -192,43 +134,6 @@ const editableSignalFieldNames = [
   "confidence",
   "strategyName",
 ] satisfies Array<keyof SignalInput>;
-
-export const createUserProfile = async ({
-  uid,
-  fullName,
-  email,
-}: Pick<UserProfile, "uid" | "fullName" | "email"> & Partial<Pick<UserProfile, "plan" | "role">>) => {
-  await setDoc(doc(db, "users", uid), {
-    fullName,
-    email,
-    createdAt: serverTimestamp(),
-  });
-};
-
-export const getUserProfile = async (uid: string) => {
-  const snapshot = await getDoc(doc(db, "users", uid));
-
-  if (!snapshot.exists()) {
-    return null;
-  }
-
-  const data = snapshot.data();
-
-  return {
-    uid: String(data.uid ?? uid),
-    fullName: String(data.fullName ?? ""),
-    email: String(data.email ?? ""),
-    plan: normalizeUserPlan(data.plan),
-    role: normalizeUserRole(data.role),
-    currentPlan: data.currentPlan ? normalizeUserPlan(data.currentPlan) : undefined,
-    stripeCustomerId: data.stripeCustomerId ? String(data.stripeCustomerId) : undefined,
-    stripeSubscriptionId: data.stripeSubscriptionId ? String(data.stripeSubscriptionId) : undefined,
-    billingStatus: data.billingStatus ? String(data.billingStatus).trim().toLowerCase() : undefined,
-    cancelAtPeriodEnd: data.cancelAtPeriodEnd === true,
-    subscriptionEndsAt: data.subscriptionEndsAt instanceof Timestamp ? data.subscriptionEndsAt : null,
-    createdAt: data.createdAt,
-  } satisfies UserProfile & { createdAt?: unknown };
-};
 
 export const getSignals = async (maxResults?: number) => {
   const signalsQuery = createSignalsQuery(maxResults);
@@ -807,17 +712,3 @@ const getOutcomeFromCloseReason = (
 
 const isSignalClosed = (signal: Signal) =>
   signal.status === "CLOSED" || signal.status === "CANCELLED";
-
-const normalizeUserPlan = (value: unknown): UserPlan => {
-  const normalizedValue = typeof value === "string" ? value.trim().toLowerCase() : "";
-
-  if (userPlans.includes(normalizedValue as UserPlan)) {
-    return normalizedValue as UserPlan;
-  }
-
-  return "free";
-};
-
-const normalizeUserRole = (value: unknown): UserRole => {
-  return value === "admin" ? "admin" : "member";
-};
