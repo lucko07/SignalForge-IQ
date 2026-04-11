@@ -15,11 +15,15 @@ import {
 import { runAutoCloseTrades } from "./autoCloseTrades.js";
 import { closeTrade } from "./tradeClose.js";
 import { syncSignalToTrade } from "./tradeSync.js";
+import { enforceRateLimit, getRequestId, getRequestIp } from "./security/rateLimit.js";
 export { closeTradeFromWebhook } from "./webhooks/closeTradeFromWebhook.js";
 
 initializeApp();
 
 const signalSecret = defineSecret("SIGNAL_INGEST_SECRET");
+const REQUEST_RATE_LIMIT_WINDOW_MS = Number(process.env.REQUEST_RATE_LIMIT_WINDOW_MS ?? 60 * 1000);
+const SIGNAL_INGEST_RATE_LIMIT_MAX = Number(process.env.SIGNAL_INGEST_RATE_LIMIT_MAX ?? 180);
+const CLOSE_TRADE_TEST_RATE_LIMIT_MAX = Number(process.env.CLOSE_TRADE_TEST_RATE_LIMIT_MAX ?? 60);
 
 export const ingestSignal = onRequest(
   {
@@ -27,13 +31,29 @@ export const ingestSignal = onRequest(
     secrets: [signalSecret],
   },
   async (request, response) => {
+    const requestId = getRequestId(request);
+    const clientIp = getRequestIp(request);
     logger.info("Signal ingestion request received.", {
+      requestId,
       method: request.method,
-      ip: request.ip,
+      ip: clientIp,
     });
 
     if (request.method !== "POST") {
       response.status(405).json({ error: "Method not allowed. Use POST." });
+      return;
+    }
+
+    const rateLimit = await enforceRateLimit({
+      route: "functions/ingestSignal",
+      identifier: clientIp,
+      limit: SIGNAL_INGEST_RATE_LIMIT_MAX,
+      windowMs: REQUEST_RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      response.set("Retry-After", String(rateLimit.retryAfterSeconds));
+      response.status(429).json({ error: "Too many requests. Please wait and try again." });
       return;
     }
 
@@ -43,7 +63,7 @@ export const ingestSignal = onRequest(
     const expectedSecret = signalSecret.value();
 
     if (!providedSecret || providedSecret !== expectedSecret) {
-      logger.warn("Unauthorized signal ingestion attempt.");
+      logger.warn("Unauthorized signal ingestion attempt.", { requestId, ip: clientIp });
       response.status(401).json({ error: "Unauthorized." });
       return;
     }
@@ -52,11 +72,11 @@ export const ingestSignal = onRequest(
 
     if (!validation.valid) {
       logger.warn("Signal payload validation failed.", {
-        errors: validation.errors,
+        requestId,
+        errorCount: validation.errors.length,
       });
       response.status(400).json({
         error: "Invalid signal payload.",
-        details: validation.errors,
       });
       return;
     }
@@ -64,14 +84,21 @@ export const ingestSignal = onRequest(
     try {
       const result = await saveSignalToFirestore(request.body);
 
-      logger.info("Signal saved successfully.", result);
+      logger.info("Signal saved successfully.", {
+        requestId,
+        id: result.id,
+        collection: result.collectionName,
+      });
       response.status(200).json({
         ok: true,
         id: result.id,
         collection: result.collectionName,
       });
     } catch (error) {
-      logger.error("Signal ingestion failed.", error);
+      logger.error("Signal ingestion failed.", {
+        requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       response.status(500).json({ error: "Failed to save signal." });
     }
   }
@@ -102,13 +129,29 @@ export const closeTradeForTest = onRequest(
     secrets: [signalSecret],
   },
   async (request, response) => {
+    const requestId = getRequestId(request);
+    const clientIp = getRequestIp(request);
     logger.info("Trade close test request received.", {
+      requestId,
       method: request.method,
-      ip: request.ip,
+      ip: clientIp,
     });
 
     if (request.method !== "POST") {
       response.status(405).json({ error: "Method not allowed. Use POST." });
+      return;
+    }
+
+    const rateLimit = await enforceRateLimit({
+      route: "functions/closeTradeForTest",
+      identifier: clientIp,
+      limit: CLOSE_TRADE_TEST_RATE_LIMIT_MAX,
+      windowMs: REQUEST_RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      response.set("Retry-After", String(rateLimit.retryAfterSeconds));
+      response.status(429).json({ error: "Too many requests. Please wait and try again." });
       return;
     }
 
@@ -118,7 +161,7 @@ export const closeTradeForTest = onRequest(
     const expectedSecret = signalSecret.value();
 
     if (!providedSecret || providedSecret !== expectedSecret) {
-      logger.warn("Unauthorized trade close test attempt.");
+      logger.warn("Unauthorized trade close test attempt.", { requestId, ip: clientIp });
       response.status(401).json({ error: "Unauthorized." });
       return;
     }
@@ -153,7 +196,10 @@ export const closeTradeForTest = onRequest(
 
       response.status(200).json({ ok: true, ...result });
     } catch (error) {
-      logger.error("Trade close test request failed.", error);
+      logger.error("Trade close test request failed.", {
+        requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       response.status(500).json({ error: "Failed to close trade." });
     }
   }
@@ -206,5 +252,6 @@ export {
   createBillingPortalSession,
   stripeWebhook,
 } from "./billing";
+export { saveAutomationSettings } from "./automation.js";
 export { deliverSignalToSubscribers } from "./triggers/deliverSignalToSubscribers";
 export { retryPendingWebhooks } from "./jobs/retryPendingWebhooks";

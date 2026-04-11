@@ -4,6 +4,8 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { sendWebhookDelivery, type WebhookDeliveryRecord } from "../services/webhookDelivery.js";
 
 const WEBHOOK_DELIVERIES_COLLECTION = "webhookDeliveries";
+const USERS_COLLECTION = "users";
+const DEFAULT_WEBHOOK_ID = "default";
 const MAX_RECORDS_PER_STATUS = 200;
 
 type RetryableDeliveryDocument = WebhookDeliveryRecord & {
@@ -97,10 +99,56 @@ const processDeliveryDocument = async (
     return false;
   }
 
+  const subscriberId = typeof delivery.subscriberId === "string"
+    ? delivery.subscriberId.trim()
+    : "";
+
+  if (!subscriberId) {
+    await markDeliveryFailed(document, "Webhook delivery record is missing subscriberId.");
+    logger.error("Retry job found delivery record without subscriberId.", {
+      deliveryId: document.id,
+      signalId: delivery.signalId ?? null,
+    });
+    return false;
+  }
+
+  const db = getFirestore();
+  const webhookSnapshot = await db
+    .collection(USERS_COLLECTION)
+    .doc(subscriberId)
+    .collection("webhooks")
+    .doc(DEFAULT_WEBHOOK_ID)
+    .get();
+
+  if (!webhookSnapshot.exists) {
+    await markDeliveryFailed(document, "Webhook delivery retry could not find subscriber webhook config.");
+    logger.error("Retry job could not find subscriber webhook config.", {
+      deliveryId: document.id,
+      signalId: delivery.signalId ?? null,
+      subscriberId,
+    });
+    return false;
+  }
+
+  const signingSecret = typeof webhookSnapshot.get("secret") === "string"
+    ? webhookSnapshot.get("secret").trim()
+    : "";
+
+  if (!signingSecret) {
+    await markDeliveryFailed(document, "Webhook delivery retry could not resolve signing secret.");
+    logger.error("Retry job could not resolve subscriber webhook secret.", {
+      deliveryId: document.id,
+      signalId: delivery.signalId ?? null,
+      subscriberId,
+    });
+    return false;
+  }
+
   await sendWebhookDelivery({
     deliveryReference: document.ref,
     delivery,
     payload: delivery.payload,
+    signingSecret,
   });
 
   return true;

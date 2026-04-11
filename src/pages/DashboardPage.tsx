@@ -11,7 +11,7 @@ import {
   subscribeToSignals,
 } from "../lib/firestore";
 import type { PerformanceSummary, Signal } from "../lib/firestore";
-import { isStripeManagedUser, normalizeManagedPlan } from "../lib/userProfiles";
+import { getEffectiveManagedPlan, isStripeManagedUser } from "../lib/userProfiles";
 
 type AccountStatusBannerState = {
   tone: "admin" | "neutral" | "success" | "warning";
@@ -40,6 +40,8 @@ export function DashboardHomeContent() {
     profile,
     loading,
     hasSubscriptionAccess,
+    hasProAccess,
+    hasEliteAccess,
     isAdmin,
   } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -157,11 +159,10 @@ export function DashboardHomeContent() {
   };
 
   const usingFallbackSignals = !isSignalsLoading && liveSignals.length === 0;
-  const visibleSignals = liveSignals.length > 0 ? liveSignals : sampleSignals;
   const recentClosedSignals = liveSignals
     .filter((signal) => signal.status === "CLOSED" || signal.status === "CANCELLED")
     .slice(0, 5);
-  const managedPlan = normalizeManagedPlan(profile?.currentPlan ?? profile?.plan ?? "free");
+  const managedPlan = getEffectiveManagedPlan(profile);
   const membershipLabel = isAdmin
     ? "Administrator"
     : hasSubscriptionAccess
@@ -196,7 +197,7 @@ export function DashboardHomeContent() {
           <p style={{ margin: "0 0 1.25rem", color: "#475467" }}>
             {isAdmin
               ? "You can manage member access and review signals from this account."
-              : "Authentication is managed by Firebase Auth, while your plan and access metadata come from Firestore."}
+              : "Your membership, billing access, and account permissions are managed securely from your profile."}
           </p>
         ) : null}
         <button
@@ -222,6 +223,34 @@ export function DashboardHomeContent() {
         <p style={{ margin: 0 }}>{accountStatusBanner.message}</p>
       </div>
 
+      <section style={sectionCardStyle}>
+        <div style={sectionHeaderStyle}>
+          <div>
+            <h2 style={{ margin: 0, color: "#101828" }}>BTC Product Lineup</h2>
+            <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
+              SignalForge IQ is currently launched around one live BTC product and one visible future module.
+            </p>
+          </div>
+        </div>
+
+        <div style={lockedPreviewGridStyle}>
+          <ProductStatusCard
+            title="BTC Precision Engine"
+            status="Live"
+            detail="Selective BTC trade activation built for cleaner structure, stronger confirmation, and disciplined signal quality."
+            footnote="Monitoring BTC for qualified precision setups. Built to avoid overtrading."
+            tone="live"
+          />
+          <ProductStatusCard
+            title="BTC Momentum Engine"
+            status="Coming Soon"
+            detail="Designed to provide additional BTC opportunity flow between Precision activations once quality standards are met."
+            footnote="Visible in the roadmap today, but not presented as a finalized live signal product."
+            tone="future"
+          />
+        </div>
+      </section>
+
       <div style={sectionCardStyle}>
         <div style={sectionHeaderStyle}>
           <div>
@@ -232,17 +261,56 @@ export function DashboardHomeContent() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <Link to="/dashboard/performance" style={secondaryLinkStyle}>
-            Performance overview
-          </Link>
-          <Link to="/dashboard/trades" style={secondaryLinkStyle}>
-            Trades
-          </Link>
-          <Link to="/dashboard/analytics" style={secondaryLinkStyle}>
-            Analytics
-          </Link>
+          {hasProAccess ? (
+            <>
+              <Link to="/dashboard/performance" style={secondaryLinkStyle}>
+                Performance overview
+              </Link>
+              <Link to="/dashboard/trades" style={secondaryLinkStyle}>
+                Trades
+              </Link>
+              <Link to="/dashboard/analytics" style={secondaryLinkStyle}>
+                Analytics
+              </Link>
+            </>
+          ) : (
+            <Link to="/pricing" style={secondaryLinkStyle}>
+              Unlock member access
+            </Link>
+          )}
         </div>
-        {!hasSubscriptionAccess ? <UpgradePrompt /> : null}
+        {!hasProAccess ? <UpgradePrompt /> : null}
+
+        <div style={lockedPreviewGridStyle}>
+          {!hasProAccess ? (
+            <>
+              <LockedPreviewCard
+                plan="Pro"
+                title="Analytics"
+                body="Pro unlocks deeper analytics, confidence tracking, and performance review built for better decisions."
+                ctaLabel="Unlock Pro"
+                to="/upgrade?plan=pro"
+              />
+              <LockedPreviewCard
+                plan="Elite"
+                title="Automation"
+                body="Elite unlocks execution-ready delivery, routing controls, and a more operational workflow."
+                ctaLabel="Explore Elite"
+                to="/upgrade?plan=elite&from=automation"
+              />
+            </>
+          ) : null}
+
+          {hasProAccess && !hasEliteAccess ? (
+            <LockedPreviewCard
+              plan="Elite"
+              title="Automation"
+              body="You already have the Decision Engine. Elite adds the Execution System with automation, delivery controls, and routing readiness."
+              ctaLabel="Upgrade to Elite"
+              to="/upgrade?plan=elite&from=automation"
+            />
+          ) : null}
+        </div>
       </div>
 
       {isAdmin ? (
@@ -298,8 +366,8 @@ export function DashboardHomeContent() {
               Your plan access and billing status are shown here.
             </p>
             <p style={{ margin: "0.4rem 0 0", color: "#667085" }}>
-              Pro includes protected member-only signal access. Elite remains available as a
-              billing tier while the core access model stays clean and predictable.
+              Pro is the Decision Engine. Elite is the Execution System for members who want
+              automation, routing, and delivery controls inside the same workflow.
             </p>
           </div>
 
@@ -342,6 +410,24 @@ export function DashboardHomeContent() {
 
           {billingActionError ? (
             <p style={{ margin: 0, color: "#b42318", fontWeight: 700 }}>{billingActionError}</p>
+          ) : null}
+
+          {!hasSubscriptionAccess ? (
+            <div>
+              <Link to="/upgrade?plan=pro" style={secondaryLinkStyle}>
+                Upgrade to Pro
+              </Link>
+            </div>
+          ) : null}
+
+          {hasProAccess && !hasEliteAccess ? (
+            <LockedPreviewCard
+              plan="Elite"
+              title="Execution Layer"
+              body="Automation is available on Elite. Upgrade to activate execution-ready delivery and advanced routing controls."
+              ctaLabel="Unlock Elite"
+              to="/upgrade?plan=elite&from=automation"
+            />
           ) : null}
         </div>
       )}
@@ -386,7 +472,7 @@ export function DashboardHomeContent() {
             <h2 style={{ margin: 0, color: "#101828" }}>Trading Signals</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
               {hasSubscriptionAccess
-                ? "Live signals are shown here first."
+                ? "BTC Precision Engine signals are shown here first."
                 : "Upgrade to Pro to unlock the full member signal feed."}
             </p>
           </div>
@@ -421,17 +507,20 @@ export function DashboardHomeContent() {
               color: "#b54708",
             }}
           >
-            <strong>No live signals yet.</strong>
+            <strong>No qualified setup detected.</strong>
             <p style={{ margin: 0 }}>
-              The system is ready. Signals will appear here as they become available.
+              BTC Precision Engine is actively monitoring BTC. No setup currently meets the required structure, trend, and confirmation criteria.
+            </p>
+            <p style={{ margin: 0 }}>
+              The system remains selective by design to avoid low-quality trades.
             </p>
             {signalsError ? <p style={{ margin: 0 }}>{signalsError}</p> : null}
           </div>
         ) : null}
 
-        {hasSubscriptionAccess && !isSignalsLoading && visibleSignals.length > 0 ? (
+        {hasSubscriptionAccess && !isSignalsLoading && liveSignals.length > 0 ? (
           <div style={{ display: "grid", gap: "1rem" }}>
-            {visibleSignals.map((signal) => (
+            {liveSignals.map((signal) => (
               <SignalCard key={signal.id} signal={signal} />
             ))}
           </div>
@@ -488,6 +577,36 @@ function UpgradePrompt() {
   );
 }
 
+type LockedPreviewCardProps = {
+  plan: "Pro" | "Elite";
+  title: string;
+  body: string;
+  ctaLabel: string;
+  to: string;
+};
+
+function LockedPreviewCard({ plan, title, body, ctaLabel, to }: LockedPreviewCardProps) {
+  return (
+    <div style={lockedPreviewCardStyle}>
+      <div style={lockedPreviewHeaderStyle}>
+        <span aria-hidden="true" style={lockedPreviewIconStyle}>
+          LOCK
+        </span>
+        <span style={lockedPreviewBadgeStyle(plan)}>{plan}</span>
+      </div>
+      <div style={{ display: "grid", gap: "0.35rem" }}>
+        <strong style={{ color: "#101828" }}>{title}</strong>
+        <p style={{ margin: 0, color: "#475467", lineHeight: 1.65 }}>{body}</p>
+      </div>
+      <div>
+        <Link to={to} style={lockedPreviewLinkStyle}>
+          {ctaLabel}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 type StatCardProps = {
   label: string;
   value: string;
@@ -511,6 +630,47 @@ function StatCard({ label, value }: StatCardProps) {
   );
 }
 
+type ProductStatusCardProps = {
+  title: string;
+  status: string;
+  detail: string;
+  footnote: string;
+  tone: "live" | "future";
+};
+
+function ProductStatusCard({ title, status, detail, footnote, tone }: ProductStatusCardProps) {
+  return (
+    <article
+      style={{
+        padding: "1rem",
+        borderRadius: "14px",
+        backgroundColor: "#ffffff",
+        border: tone === "live" ? "1px solid #abefc6" : "1px solid #d0d5dd",
+        display: "grid",
+        gap: "0.6rem",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+        <strong style={{ color: "#101828" }}>{title}</strong>
+        <span
+          style={{
+            padding: "0.3rem 0.65rem",
+            borderRadius: "999px",
+            backgroundColor: tone === "live" ? "#ecfdf3" : "#f2f4f7",
+            color: tone === "live" ? "#027a48" : "#475467",
+            fontSize: "0.8rem",
+            fontWeight: 700,
+          }}
+        >
+          {status}
+        </span>
+      </div>
+      <p style={{ margin: 0, color: "#475467", lineHeight: 1.65 }}>{detail}</p>
+      <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>{footnote}</p>
+    </article>
+  );
+}
+
 const sectionCardStyle = {
   padding: "1.5rem",
   border: "1px solid #d0d5dd",
@@ -531,6 +691,13 @@ const statsGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: "0.75rem",
+};
+
+const lockedPreviewGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "0.75rem",
+  marginTop: "1rem",
 };
 
 const billingNoticeStyle = {
@@ -612,6 +779,49 @@ const secondaryLinkStyle = {
   fontWeight: 700,
 };
 
+const lockedPreviewCardStyle = {
+  display: "grid",
+  gap: "0.75rem",
+  padding: "1rem",
+  borderRadius: "16px",
+  border: "1px solid #d7dde7",
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+};
+
+const lockedPreviewHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "0.75rem",
+};
+
+const lockedPreviewIconStyle = {
+  fontSize: "0.72rem",
+  letterSpacing: "0.08em",
+  fontWeight: 700,
+  color: "#9a3412",
+};
+
+const lockedPreviewBadgeStyle = (plan: "Pro" | "Elite") => ({
+  padding: "0.3rem 0.55rem",
+  borderRadius: "999px",
+  backgroundColor: plan === "Elite" ? "#0f172a" : "#eaf2fb",
+  color: plan === "Elite" ? "#f8fafc" : "#1f3a5b",
+  fontSize: "0.76rem",
+  fontWeight: 700,
+});
+
+const lockedPreviewLinkStyle = {
+  display: "inline-flex",
+  textDecoration: "none",
+  padding: "0.8rem 1rem",
+  borderRadius: "12px",
+  border: "1px solid #d0d5dd",
+  backgroundColor: "#ffffff",
+  color: "#344054",
+  fontWeight: 700,
+};
+
 const formatSubscriptionEndDate = (value?: Timestamp | null) => {
   if (!value) {
     return null;
@@ -635,7 +845,7 @@ const getAccountStatusBannerState = (
     };
   }
 
-  const currentPlan = normalizeManagedPlan(profile.currentPlan ?? profile.plan);
+  const currentPlan = getEffectiveManagedPlan(profile);
   const planName = currentPlan === "elite" ? "Elite" : "Pro";
   const scheduledCancellationDate = formatSubscriptionEndDate(profile.subscriptionEndsAt);
   const hasBillingIssue = isBillingIssueStatus(profile.billingStatus);
@@ -644,6 +854,13 @@ const getAccountStatusBannerState = (
     return {
       tone: "success",
       message: "Your account has full access.",
+    };
+  }
+
+  if (profile.approved === false) {
+    return {
+      tone: "warning",
+      message: "Your account is signed in, but access is pending approval. Premium features remain locked until approval is restored.",
     };
   }
 
@@ -702,32 +919,5 @@ const isBillingIssueStatus = (billingStatus?: string) => {
 };
 
 const capitalizePlan = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-
-const sampleSignals: Signal[] = [
-  {
-    id: "sample-btc-long",
-    symbol: "BTC",
-    assetType: "crypto",
-    direction: "LONG",
-    entry: "42000",
-    stopLoss: "41000",
-    target: "45000",
-    thesis: "Breakout above resistance with momentum building on higher volume.",
-    status: "ACTIVE",
-    source: "sample",
-  },
-  {
-    id: "sample-eurusd-short",
-    symbol: "EURUSD",
-    assetType: "forex",
-    direction: "SHORT",
-    entry: "1.0910",
-    stopLoss: "1.0965",
-    target: "1.0825",
-    thesis: "Price rejected key supply zone and is fading below intraday structure.",
-    status: "ACTIVE",
-    source: "sample",
-  },
-];
 
 export default DashboardPage;

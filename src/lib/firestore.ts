@@ -62,6 +62,7 @@ export type Signal = {
   symbol: string;
   assetType: string;
   direction: string;
+  side?: string;
   entry: string;
   stopLoss: string;
   target: string;
@@ -70,7 +71,17 @@ export type Signal = {
   source?: string;
   timeframe?: string;
   confidence?: string;
+  product?: string;
+  productCode?: string;
+  engine?: string;
+  engineCode?: string;
   strategyName?: string;
+  strategyVersion?: string;
+  marketState?: string;
+  eventType?: string;
+  eventId?: string;
+  tickerId?: string;
+  rrPlanned?: number;
   createdAt?: unknown;
   updatedAt?: unknown;
   updatedBy?: string;
@@ -403,6 +414,7 @@ const mapSignalDocument = (signalDocument: QueryDocumentSnapshot<DocumentData>) 
     symbol: String(data.symbol ?? ""),
     assetType: String(data.assetType ?? ""),
     direction: String(data.direction ?? ""),
+    side: data.side ? String(data.side) : undefined,
     entry: String(data.entry ?? ""),
     stopLoss: String(data.stopLoss ?? ""),
     target: String(data.target ?? ""),
@@ -411,7 +423,17 @@ const mapSignalDocument = (signalDocument: QueryDocumentSnapshot<DocumentData>) 
     source: data.source ? String(data.source) : undefined,
     timeframe: data.timeframe ? String(data.timeframe) : undefined,
     confidence: data.confidence ? String(data.confidence) : undefined,
+    product: data.product ? String(data.product) : undefined,
+    productCode: data.productCode ? String(data.productCode) : undefined,
+    engine: data.engine ? String(data.engine) : undefined,
+    engineCode: data.engineCode ? String(data.engineCode) : undefined,
     strategyName: data.strategyName ? String(data.strategyName) : undefined,
+    strategyVersion: data.strategyVersion ? String(data.strategyVersion) : undefined,
+    marketState: data.marketState ? String(data.marketState) : undefined,
+    eventType: data.eventType ? String(data.eventType) : undefined,
+    eventId: data.eventId ? String(data.eventId) : undefined,
+    tickerId: data.tickerId ? String(data.tickerId) : undefined,
+    rrPlanned: typeof data.rrPlanned === "number" ? data.rrPlanned : undefined,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     updatedBy: data.updatedBy ? String(data.updatedBy) : undefined,

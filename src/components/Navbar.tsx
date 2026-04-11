@@ -32,6 +32,7 @@ function Navbar() {
   const isSignedIn = !!currentUser;
   const showAdminLink = isSignedIn && isAdmin;
   const showDashboardLink = isSignedIn;
+  const showAutomationLink = isSignedIn && (isAdmin || hasSubscriptionAccess);
   const accountLabel = isAdmin
     ? "Administrator"
     : hasSubscriptionAccess
@@ -105,7 +106,7 @@ function Navbar() {
                     Dashboard
                   </NavLink>
                 ) : null}
-                {showDashboardLink ? (
+                {showAutomationLink ? (
                   <NavLink to="/dashboard/automation" style={({ isActive }) => navLinkStyle(isActive)}>
                     Automation
                   </NavLink>

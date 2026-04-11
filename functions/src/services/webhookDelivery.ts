@@ -3,7 +3,7 @@ import { logger } from "firebase-functions";
 import { getDeliveryPolicy, getNextRetryDelaySeconds, type DeliveryPlan } from "./deliveryPolicy.js";
 import { buildWebhookSignatureHeaders } from "./signature.js";
 
-const MAX_CAPTURED_RESPONSE_CHARS = 2_000;
+const MAX_CAPTURED_RESPONSE_CHARS = 500;
 
 export type WebhookDeliveryStatus =
   | "pending"
@@ -85,12 +85,23 @@ const captureResponseBody = async (response: Response) => {
 
 const captureResponseHeaders = (response: Response) => {
   const capturedHeaders: Record<string, string> = {};
+  const allowedHeaders = new Set(["content-type", "x-request-id", "traceparent", "retry-after"]);
 
   response.headers.forEach((value, key) => {
-    capturedHeaders[key] = value;
+    if (allowedHeaders.has(key.toLowerCase())) {
+      capturedHeaders[key] = value;
+    }
   });
 
   return capturedHeaders;
+};
+
+const getDestinationHost = (destinationUrl: string) => {
+  try {
+    return new URL(destinationUrl).host;
+  } catch {
+    return "invalid-url";
+  }
 };
 
 const classifyHttpFailure = (statusCode: number) => {
@@ -156,6 +167,7 @@ export const sendWebhookDelivery = async (
 
   const policy = getDeliveryPolicy(delivery.plan);
   const secret = resolveSigningSecret(delivery, signingSecret);
+  const destinationHost = getDestinationHost(destinationUrl);
 
   if (!secret) {
     throw new Error("Webhook delivery is missing a signing secret.");
@@ -183,18 +195,18 @@ export const sendWebhookDelivery = async (
       signal: AbortSignal.timeout(policy.requestTimeoutMs),
     });
     const durationMs = Date.now() - startedAt;
-    const responseBody = await captureResponseBody(response);
+    const responseBody = response.ok ? null : await captureResponseBody(response);
     const responseHeaders = captureResponseHeaders(response);
 
     if (response.ok) {
       await deliveryReference.set({
         status: "delivered",
       attemptCount,
-      plan: policy.plan,
-      deliveredAt: FieldValue.serverTimestamp(),
-      lastSuccessAt: FieldValue.serverTimestamp(),
+        plan: policy.plan,
+        deliveredAt: FieldValue.serverTimestamp(),
+        lastSuccessAt: FieldValue.serverTimestamp(),
         lastResponseStatus: response.status,
-        lastResponseBody: responseBody,
+        lastResponseBody: null,
         lastResponseHeaders: responseHeaders,
         lastDurationMs: durationMs,
       lastErrorAt: null,
@@ -209,7 +221,7 @@ export const sendWebhookDelivery = async (
         deliveryId: deliveryReference.id,
         subscriberId: delivery.subscriberId ?? null,
         signalId: delivery.signalId ?? null,
-        destinationUrl,
+        destinationHost,
         attemptCount,
         responseStatus: response.status,
         durationMs,
@@ -256,7 +268,7 @@ export const sendWebhookDelivery = async (
       deliveryId: deliveryReference.id,
       subscriberId: delivery.subscriberId ?? null,
       signalId: delivery.signalId ?? null,
-      destinationUrl,
+      destinationHost,
       attemptCount,
       responseStatus: response.status,
       durationMs,
@@ -306,7 +318,7 @@ export const sendWebhookDelivery = async (
       deliveryId: deliveryReference.id,
       subscriberId: delivery.subscriberId ?? null,
       signalId: delivery.signalId ?? null,
-      destinationUrl,
+      destinationHost,
       attemptCount,
       durationMs,
       status,

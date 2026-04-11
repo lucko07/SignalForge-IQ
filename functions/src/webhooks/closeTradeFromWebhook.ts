@@ -9,10 +9,13 @@ import {
   upsertTradeRow,
 } from "../utils/googleSheets.js";
 import { TRADES_COLLECTION_NAME } from "../tradeSync.js";
+import { enforceRateLimit, getRequestId, getRequestIp } from "../security/rateLimit.js";
 
 const closeTradeWebhookSecret = defineSecret("CLOSE_TRADE_WEBHOOK_SECRET");
 const WEBHOOK_EVENTS_COLLECTION = "webhook_events";
 const MAX_BODY_BYTES = 32 * 1024;
+const CLOSE_TRADE_RATE_LIMIT_WINDOW_MS = Number(process.env.CLOSE_TRADE_RATE_LIMIT_WINDOW_MS ?? 60 * 1000);
+const CLOSE_TRADE_RATE_LIMIT_MAX = Number(process.env.CLOSE_TRADE_RATE_LIMIT_MAX ?? 180);
 
 type TradeSide = "long" | "short";
 type TradeResult = "open" | "win" | "loss" | "breakeven";
@@ -824,13 +827,29 @@ export const closeTradeFromWebhook = onRequest(
     secrets: [closeTradeWebhookSecret, GOOGLE_SHEETS_CLIENT_EMAIL, GOOGLE_SHEETS_PRIVATE_KEY],
   },
   async (request, response) => {
+    const requestId = getRequestId(request);
+    const clientIp = getRequestIp(request);
     logger.info("Close trade webhook request received.", {
+      requestId,
       method: request.method,
-      ip: request.ip,
+      ip: clientIp,
     });
 
     if (request.method !== "POST") {
       response.status(405).json({ ok: false, error: "Method not allowed. Use POST." });
+      return;
+    }
+
+    const rateLimit = await enforceRateLimit({
+      route: "functions/closeTradeFromWebhook",
+      identifier: clientIp,
+      limit: CLOSE_TRADE_RATE_LIMIT_MAX,
+      windowMs: CLOSE_TRADE_RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      response.set("Retry-After", String(rateLimit.retryAfterSeconds));
+      response.status(429).json({ ok: false, error: "Too many requests. Please wait and try again." });
       return;
     }
 
@@ -839,8 +858,9 @@ export const closeTradeFromWebhook = onRequest(
 
     if (contentLength !== null && (Number.isNaN(contentLength) || contentLength > MAX_BODY_BYTES)) {
       logger.warn("Close trade webhook rejected oversized body.", {
+        requestId,
         contentLength: contentLengthHeader,
-        ip: request.ip,
+        ip: clientIp,
       });
       response.status(400).json({ ok: false, error: "Request body too large." });
       return;
@@ -848,7 +868,8 @@ export const closeTradeFromWebhook = onRequest(
 
     if (!requireWebhookSecret(request)) {
       logger.warn("Close trade webhook rejected due to invalid secret.", {
-        ip: request.ip,
+        requestId,
+        ip: clientIp,
       });
       response.status(401).json({ ok: false, error: "Unauthorized." });
       return;
@@ -860,12 +881,13 @@ export const closeTradeFromWebhook = onRequest(
       payload = validatePayload(request.body);
     } catch (error) {
       logger.warn("Close trade webhook rejected invalid payload.", {
+        requestId,
         error: error instanceof Error ? error.message : String(error),
-        ip: request.ip,
+        ip: clientIp,
       });
       response.status(400).json({
         ok: false,
-        error: error instanceof Error ? error.message : "Invalid payload.",
+        error: "Invalid exit payload.",
       });
       return;
     }
@@ -875,6 +897,7 @@ export const closeTradeFromWebhook = onRequest(
 
       if (!matchedTrade) {
         logger.warn("Close trade webhook trade not found.", {
+          requestId,
           tradeId: payload.tradeId,
           signalId: payload.signalId,
           symbol: payload.symbol,
@@ -925,6 +948,7 @@ export const closeTradeFromWebhook = onRequest(
         );
       } catch (sheetError) {
         logger.error("Failed to append closed trade to Google Sheets.", {
+          requestId,
           tradeId: result.tradeId,
           eventId: payload.eventId,
           error: sheetError instanceof Error ? sheetError.message : String(sheetError),
@@ -938,18 +962,20 @@ export const closeTradeFromWebhook = onRequest(
 
       if (errorName === "SymbolMismatch" || errorName === "SideMismatch") {
         logger.warn("Close trade webhook rejected trade mismatch.", {
+          requestId,
           tradeId: payload.tradeId,
           signalId: payload.signalId,
           source: payload.source,
           eventId: payload.eventId,
           error: message,
         });
-        response.status(409).json({ ok: false, error: message });
+        response.status(409).json({ ok: false, error: "Provided trade details do not match an open trade." });
         return;
       }
 
       if (errorName === "AmbiguousExit") {
         logger.warn("Close trade webhook rejected ambiguous exit.", {
+          requestId,
           tradeId: payload.tradeId,
           signalId: payload.signalId,
           symbol: payload.symbol,
@@ -958,11 +984,12 @@ export const closeTradeFromWebhook = onRequest(
           eventId: payload.eventId,
           error: message,
         });
-        response.status(422).json({ ok: false, error: message });
+        response.status(422).json({ ok: false, error: "Exit webhook payload is ambiguous." });
         return;
       }
 
       logger.error("Close trade webhook failed.", {
+        requestId,
         tradeId: payload.tradeId,
         signalId: payload.signalId,
         symbol: payload.symbol,

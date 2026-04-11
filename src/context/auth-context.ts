@@ -9,6 +9,9 @@ export type AuthContextValue = {
   isAuthenticated: boolean;
   isAdmin: boolean;
   hasSubscriptionAccess: boolean;
+  hasProAccess: boolean;
+  hasEliteAccess: boolean;
+  canAccessAutomation: boolean;
   hasLegalConsent: boolean;
   refreshProfile: () => Promise<void>;
 };

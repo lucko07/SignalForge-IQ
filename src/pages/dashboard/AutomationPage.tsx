@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   doc,
   getDoc,
-  serverTimestamp,
-  setDoc,
 } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/auth-context";
+import { saveAutomationSettings } from "../../lib/automation";
 import { db } from "../../lib/firebase";
+import { canUseAutomation, getEffectiveManagedPlan } from "../../lib/userProfiles";
 
 type AutomationProfileDocument = {
   plan?: string;
@@ -50,12 +50,23 @@ const DEFAULT_FORM_STATE: FormState = {
   assetFiltersInput: "",
 };
 
+const getAutomationUiErrorMessage = (error: unknown, fallbackMessage: string) => (
+  error instanceof Error && error.message.trim()
+    ? error.message.trim()
+    : fallbackMessage
+);
+
 function AutomationPage() {
-  const { currentUser, loading: authLoading, refreshProfile } = useAuth();
+  const {
+    currentUser,
+    loading: authLoading,
+    refreshProfile,
+    profile,
+    isAdmin,
+  } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSecretVisible, setIsSecretVisible] = useState(false);
-  const [profileData, setProfileData] = useState<AutomationProfileDocument | null>(null);
   const [hasWebhookConfig, setHasWebhookConfig] = useState(false);
   const [initialFormState, setInitialFormState] = useState<FormState>(DEFAULT_FORM_STATE);
   const [formState, setFormState] = useState<FormState>(DEFAULT_FORM_STATE);
@@ -106,7 +117,6 @@ function AutomationPage() {
           assetFiltersInput: normalizeAssetFilters(webhookData?.assetFilters).join(", "),
         };
 
-        setProfileData(nextProfileData);
         setHasWebhookConfig(webhookSnapshot.exists());
         setInitialFormState(nextFormState);
         setFormState(nextFormState);
@@ -118,10 +128,7 @@ function AutomationPage() {
 
         setNotice({
           tone: "error",
-          message:
-            error instanceof Error && error.message.trim()
-              ? error.message.trim()
-              : "Unable to load automation settings right now.",
+          message: getAutomationUiErrorMessage(error, "Unable to load automation settings right now."),
         });
       } finally {
         if (isMounted) {
@@ -137,22 +144,29 @@ function AutomationPage() {
     };
   }, [authLoading, currentUser]);
 
-  const normalizedPlan = useMemo(() => {
-    const rawPlan = profileData?.plan ?? profileData?.currentPlan ?? "free";
-    return typeof rawPlan === "string" ? rawPlan.trim().toLowerCase() : "free";
-  }, [profileData]);
+  const normalizedPlan = useMemo(
+    () => getEffectiveManagedPlan(profile),
+    [profile]
+  );
+  const hasAutomationAccess = canUseAutomation(profile);
 
   const deliveryLabel = useMemo(() => {
+    if (isAdmin) {
+      return "Full access";
+    }
+
     if (normalizedPlan === "elite") {
-      return "Real-time delivery";
+      return "Automation enabled";
     }
 
     if (normalizedPlan === "pro") {
-      return "Standard delivery";
+      return "Execution upgrade available";
     }
 
-    return "Plan review recommended";
-  }, [normalizedPlan]);
+    return "Elite access required";
+  }, [isAdmin, normalizedPlan]);
+
+  const isSaveDisabled = isSaving || (!isAdmin && !hasAutomationAccess);
 
   const normalizedAssetFilters = useMemo(
     () => normalizeAssetFilters(formState.assetFiltersInput),
@@ -177,11 +191,11 @@ function AutomationPage() {
     const nextErrors: FormErrors = {};
 
     if (formState.automationEnabled && !formState.webhookUrl.trim()) {
-      nextErrors.webhookUrl = "Webhook URL is required when automation is enabled.";
+      nextErrors.webhookUrl = "A destination URL is required to enable automation.";
     }
 
     if (formState.automationEnabled && !formState.webhookSecret.trim()) {
-      nextErrors.webhookSecret = "Webhook secret is required when automation is enabled.";
+      nextErrors.webhookSecret = "A verification secret is required to enable automation.";
     }
 
     const rawAssetItems = formState.assetFiltersInput
@@ -209,30 +223,12 @@ function AutomationPage() {
     setNotice(null);
 
     try {
-      const userReference = doc(db, "users", currentUser.uid);
-      const webhookReference = doc(db, "users", currentUser.uid, "webhooks", "default");
-
-      await Promise.all([
-        setDoc(
-          userReference,
-          {
-            webhookEnabled: formState.automationEnabled,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        ),
-        setDoc(
-          webhookReference,
-          {
-            enabled: formState.automationEnabled,
-            url: formState.webhookUrl.trim(),
-            secret: formState.webhookSecret.trim(),
-            assetFilters: normalizedAssetFilters,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        ),
-      ]);
+      await saveAutomationSettings({
+        automationEnabled: formState.automationEnabled,
+        destinationUrl: formState.webhookUrl.trim(),
+        verificationSecret: formState.webhookSecret.trim(),
+        assetFilters: normalizedAssetFilters,
+      });
 
       const nextInitialState = {
         automationEnabled: formState.automationEnabled,
@@ -244,10 +240,6 @@ function AutomationPage() {
       setHasWebhookConfig(true);
       setInitialFormState(nextInitialState);
       setFormState(nextInitialState);
-      setProfileData((current) => ({
-        ...current,
-        webhookEnabled: nextInitialState.automationEnabled,
-      }));
       setNotice({
         tone: "success",
         message: "Automation settings saved successfully.",
@@ -256,10 +248,7 @@ function AutomationPage() {
     } catch (error) {
       setNotice({
         tone: "error",
-        message:
-          error instanceof Error && error.message.trim()
-            ? error.message.trim()
-            : "Unable to save automation settings right now.",
+        message: getAutomationUiErrorMessage(error, "Unable to save automation settings right now."),
       });
     } finally {
       setIsSaving(false);
@@ -279,7 +268,7 @@ function AutomationPage() {
     setNotice({
       tone: "info",
       message:
-        "Test connection is available in the interface now. Backend test delivery can be wired in next.",
+        "Test delivery will be available here soon.",
     });
   };
 
@@ -310,9 +299,8 @@ function AutomationPage() {
           <p style={eyebrowStyle}>Dashboard</p>
           <h1 style={{ marginBottom: "0.75rem" }}>Automation</h1>
           <p style={{ margin: 0, maxWidth: "48rem" }}>
-            Connect a webhook endpoint to receive approved signals automatically. Your settings are
-            stored securely in Firestore and can be updated any time without affecting the rest of
-            your account profile.
+            Connect your destination to receive approved BTC Precision Engine alerts automatically.
+            Your delivery settings are saved securely to your account and can be updated any time.
           </p>
         </div>
         <div style={heroActionsStyle}>
@@ -338,43 +326,43 @@ function AutomationPage() {
         <StatusCard
           label="Automation"
           value={formState.automationEnabled ? "Enabled" : "Disabled"}
-          detail={formState.automationEnabled ? "Signals can be sent to your endpoint." : "No webhook delivery will be attempted."}
+          detail={formState.automationEnabled ? "Approved signals can be delivered to your endpoint." : "Automatic delivery is currently turned off."}
         />
         <StatusCard
-          label="Webhook Config"
+          label="Delivery Setup"
           value={hasWebhookConfig ? "Configured" : "Not configured"}
-          detail={hasWebhookConfig ? "Default webhook document found." : "A default webhook document will be created on save."}
+          detail={hasWebhookConfig ? "Your delivery endpoint is ready." : "Your delivery settings will be created when you save."}
         />
       </div>
 
-      {normalizedPlan !== "elite" && normalizedPlan !== "pro" ? (
+      {!isAdmin && !hasAutomationAccess ? (
         <div style={warningCardStyle}>
-          <strong>Plan check recommended</strong>
+          <strong>Upgrade required for live delivery</strong>
           <p style={{ margin: 0 }}>
-            Webhook automation may not be available on your current plan. You can still save your
-            settings now so the backend is ready when access is enabled.
+            Automation delivery is available on Elite. You can still prepare your routing settings
+            now so everything is ready when your account moves up to execution access.
           </p>
         </div>
       ) : null}
 
       <div style={infoPanelStyle}>
-        <strong>Webhook behavior</strong>
+        <strong>How delivery works</strong>
         <p style={{ margin: 0 }}>
-          SignalForge IQ sends JSON `POST` requests to your configured endpoint. Make sure your
-          receiver can accept JSON payloads and validate the shared secret on incoming requests.
+          SignalForge IQ sends approved BTC Precision Engine alerts to your configured endpoint.
+          Make sure your destination is ready to receive secure signal deliveries.
         </p>
         <p style={{ margin: 0 }}>
-          Elite members currently see {deliveryLabel.toLowerCase()}, while Pro is designed to
-          support standard delivery behavior as the backend expands.
+          Elite members receive {deliveryLabel.toLowerCase()}. Pro is designed for signals and
+          analytics, while Elite unlocks the execution layer.
         </p>
       </div>
 
       <div style={formCardStyle}>
         <div style={sectionHeaderStyle}>
           <div>
-            <h2 style={{ margin: 0, color: "#101828" }}>Webhook Settings</h2>
+            <h2 style={{ margin: 0, color: "#101828" }}>Delivery Settings</h2>
             <p style={{ margin: "0.45rem 0 0", color: "#475467" }}>
-              Configure the default webhook stored at `users/{currentUser.uid}/webhooks/default`.
+              Choose where SignalForge IQ should send your approved signal alerts.
             </p>
           </div>
         </div>
@@ -387,6 +375,7 @@ function AutomationPage() {
               onClick={() => handleFieldChange("automationEnabled", !formState.automationEnabled)}
               style={toggleButtonStyle(formState.automationEnabled)}
               aria-pressed={formState.automationEnabled}
+              disabled={!isAdmin && !hasAutomationAccess}
             >
               <span style={toggleKnobStyle(formState.automationEnabled)} />
               <span>{formState.automationEnabled ? "Enabled" : "Disabled"}</span>
@@ -394,26 +383,28 @@ function AutomationPage() {
           </label>
 
           <label style={fieldGroupStyle}>
-            <span style={fieldLabelStyle}>Webhook URL</span>
+            <span style={fieldLabelStyle}>Destination URL</span>
             <input
               type="url"
               value={formState.webhookUrl}
               onChange={(event) => handleFieldChange("webhookUrl", event.target.value)}
-              placeholder="https://example.com/webhooks/signalforge"
+              placeholder="https://example.com/signalforge"
               style={inputStyle(Boolean(errors.webhookUrl))}
+              disabled={!isAdmin && !hasAutomationAccess}
             />
             {errors.webhookUrl ? <span style={errorTextStyle}>{errors.webhookUrl}</span> : null}
           </label>
 
           <label style={fieldGroupStyle}>
-            <span style={fieldLabelStyle}>Webhook secret</span>
+            <span style={fieldLabelStyle}>Verification secret</span>
             <div style={secretRowStyle}>
               <input
                 type={isSecretVisible ? "text" : "password"}
                 value={formState.webhookSecret}
                 onChange={(event) => handleFieldChange("webhookSecret", event.target.value)}
-                placeholder="Enter your shared secret"
+                placeholder="Enter your verification secret"
                 style={{ ...inputStyle(Boolean(errors.webhookSecret)), flex: 1 }}
+                disabled={!isAdmin && !hasAutomationAccess}
               />
               <button
                 type="button"
@@ -434,10 +425,11 @@ function AutomationPage() {
               onChange={(event) => handleFieldChange("assetFiltersInput", event.target.value)}
               placeholder="QQQ, BTCUSD, ETHUSD"
               style={inputStyle(Boolean(errors.assetFiltersInput))}
+              disabled={!isAdmin && !hasAutomationAccess}
             />
             <span style={helperTextStyle}>
               Enter comma-separated symbols. They will be trimmed, uppercased, deduplicated, and
-              saved as a Firestore array of strings.
+              saved to your delivery preferences.
             </span>
             {errors.assetFiltersInput ? (
               <span style={errorTextStyle}>{errors.assetFiltersInput}</span>
@@ -446,7 +438,7 @@ function AutomationPage() {
         </div>
 
         <div style={previewCardStyle}>
-          <strong>Stored preview</strong>
+          <strong>Delivery preview</strong>
           <code style={codePreviewStyle}>
             {JSON.stringify(normalizedAssetFilters)}
           </code>
@@ -456,14 +448,15 @@ function AutomationPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
-            style={primaryButtonStyle(isSaving)}
+            disabled={isSaveDisabled}
+            style={primaryButtonStyle(isSaveDisabled)}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? "Saving..." : "Save settings"}
           </button>
           <button
             type="button"
             onClick={handleTestConnection}
+            disabled={!isAdmin && !hasAutomationAccess}
             style={secondaryButtonStyle}
           >
             Test connection
@@ -474,7 +467,7 @@ function AutomationPage() {
             disabled={isSaving}
             style={secondaryButtonStyle}
           >
-            Clear/reset
+            Reset changes
           </button>
         </div>
       </div>

@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import SignalCard from "../components/SignalCard";
+import { useAuth } from "../context/auth-context";
 import { subscribeToSignals } from "../lib/firestore";
 import type { Signal } from "../lib/firestore";
 
 const PUBLIC_PREVIEW_LIMIT = 3;
 
 function SignalsPage() {
+  const { currentUser, hasSubscriptionAccess, isAdmin } = useAuth();
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const isSignedIn = Boolean(currentUser);
+  const hasPremiumAccess = isAdmin || hasSubscriptionAccess;
 
   useEffect(() => {
     const unsubscribe = subscribeToSignals(
@@ -61,8 +65,8 @@ function SignalsPage() {
         </p>
         <h1 style={{ margin: "0 0 1rem", fontSize: "2.5rem" }}>Signals</h1>
         <p style={{ margin: 0, maxWidth: "720px" }}>
-          A preview of recent trading signals. Signal flow depends on market conditions and setup quality, with
-          member access focused on quality rather than a fixed posting schedule.
+          A preview of recent trading signals. BTC Precision Engine remains selective by design, so signal flow
+          depends on market conditions, setup quality, and confirmation rather than a fixed posting schedule.
         </p>
       </div>
 
@@ -95,41 +99,76 @@ function SignalsPage() {
               backgroundColor: "#ffffff",
             }}
           >
-            <h2 style={{ margin: 0, color: "#101828" }}>No live signals yet.</h2>
+            <h2 style={{ margin: 0, color: "#101828" }}>No qualified setup detected.</h2>
             <p style={{ margin: 0, color: "#475467" }}>
-              The system is ready. Signals will appear here as they become available.
+              BTC Precision Engine is actively monitoring BTC. Signals appear when structure, trend, and
+              confirmation align with the required quality threshold.
             </p>
             {loadError ? (
               <p style={{ margin: 0, color: "#b42318" }}>{loadError}</p>
             ) : null}
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <Link
-                to="/signup"
-                style={{
-                  textDecoration: "none",
-                  backgroundColor: "#101828",
-                  color: "#ffffff",
-                  padding: "0.9rem 1.2rem",
-                  borderRadius: "12px",
-                  fontWeight: 700,
-                }}
-              >
-                Sign up
-              </Link>
-              <Link
-                to="/login"
-                style={{
-                  textDecoration: "none",
-                  backgroundColor: "#ffffff",
-                  color: "#101828",
-                  padding: "0.9rem 1.2rem",
-                  borderRadius: "12px",
-                  border: "1px solid #d0d5dd",
-                  fontWeight: 700,
-                }}
-              >
-                Log in
-              </Link>
+              {hasPremiumAccess ? (
+                <Link
+                  to="/dashboard"
+                  style={{
+                    textDecoration: "none",
+                    backgroundColor: "#101828",
+                    color: "#ffffff",
+                    padding: "0.9rem 1.2rem",
+                    borderRadius: "12px",
+                    fontWeight: 700,
+                  }}
+                >
+                  Open dashboard
+                </Link>
+              ) : null}
+              {isSignedIn && !hasPremiumAccess ? (
+                <Link
+                  to="/pricing"
+                  style={{
+                    textDecoration: "none",
+                    backgroundColor: "#101828",
+                    color: "#ffffff",
+                    padding: "0.9rem 1.2rem",
+                    borderRadius: "12px",
+                    fontWeight: 700,
+                  }}
+                >
+                  Unlock member access
+                </Link>
+              ) : null}
+              {!isSignedIn ? (
+                <>
+                  <Link
+                    to="/signup"
+                    style={{
+                      textDecoration: "none",
+                      backgroundColor: "#101828",
+                      color: "#ffffff",
+                      padding: "0.9rem 1.2rem",
+                      borderRadius: "12px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Sign up
+                  </Link>
+                  <Link
+                    to="/login"
+                    style={{
+                      textDecoration: "none",
+                      backgroundColor: "#ffffff",
+                      color: "#101828",
+                      padding: "0.9rem 1.2rem",
+                      borderRadius: "12px",
+                      border: "1px solid #d0d5dd",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Log in
+                  </Link>
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -146,37 +185,87 @@ function SignalsPage() {
       >
         <h2 style={{ margin: "0 0 0.75rem", color: "#ffffff" }}>Members-Only Access</h2>
         <p style={{ margin: "0 0 1.25rem", color: "#d0d5dd" }}>
-          Pro includes the protected dashboard, live signals, closed trade history, and performance tracking.
-          Elite includes everything in Pro plus higher-tier premium access and future expanded member benefits.
+          Pro includes BTC Precision Engine, the protected dashboard, closed trade history, and performance tracking.
+          Elite adds the execution layer with automation, routing, and delivery controls while BTC Momentum remains visible as an upcoming module.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <Link
-            to="/signup"
-            style={{
-              textDecoration: "none",
-              backgroundColor: "#ffffff",
-              color: "#101828",
-              padding: "0.9rem 1.2rem",
-              borderRadius: "12px",
-              fontWeight: 700,
-            }}
-          >
-            Sign up
-          </Link>
-          <Link
-            to="/login"
-            style={{
-              textDecoration: "none",
-              backgroundColor: "transparent",
-              color: "#ffffff",
-              padding: "0.9rem 1.2rem",
-              borderRadius: "12px",
-              border: "1px solid #475467",
-              fontWeight: 700,
-            }}
-          >
-            Log in
-          </Link>
+          {hasPremiumAccess ? (
+            <Link
+              to="/dashboard"
+              style={{
+                textDecoration: "none",
+                backgroundColor: "#ffffff",
+                color: "#101828",
+                padding: "0.9rem 1.2rem",
+                borderRadius: "12px",
+                fontWeight: 700,
+              }}
+            >
+              Open dashboard
+            </Link>
+          ) : null}
+          {isSignedIn && !hasPremiumAccess ? (
+            <>
+              <Link
+                to="/upgrade?plan=pro"
+                style={{
+                  textDecoration: "none",
+                  backgroundColor: "#ffffff",
+                  color: "#101828",
+                  padding: "0.9rem 1.2rem",
+                  borderRadius: "12px",
+                  fontWeight: 700,
+                }}
+              >
+                Upgrade to Pro
+              </Link>
+              <Link
+                to="/pricing"
+                style={{
+                  textDecoration: "none",
+                  backgroundColor: "transparent",
+                  color: "#ffffff",
+                  padding: "0.9rem 1.2rem",
+                  borderRadius: "12px",
+                  border: "1px solid #475467",
+                  fontWeight: 700,
+                }}
+              >
+                View plans
+              </Link>
+            </>
+          ) : null}
+          {!isSignedIn ? (
+            <>
+              <Link
+                to="/signup"
+                style={{
+                  textDecoration: "none",
+                  backgroundColor: "#ffffff",
+                  color: "#101828",
+                  padding: "0.9rem 1.2rem",
+                  borderRadius: "12px",
+                  fontWeight: 700,
+                }}
+              >
+                Sign up
+              </Link>
+              <Link
+                to="/login"
+                style={{
+                  textDecoration: "none",
+                  backgroundColor: "transparent",
+                  color: "#ffffff",
+                  padding: "0.9rem 1.2rem",
+                  borderRadius: "12px",
+                  border: "1px solid #475467",
+                  fontWeight: 700,
+                }}
+              >
+                Log in
+              </Link>
+            </>
+          ) : null}
         </div>
       </div>
 

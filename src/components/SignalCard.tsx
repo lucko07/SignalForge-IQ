@@ -8,6 +8,7 @@ function SignalCard({ signal }: SignalCardProps) {
   const createdAtLabel = formatSignalDate(signal.createdAt);
   const closedAtLabel = formatSignalDate(signal.closedAt);
   const sourceLabel = formatSourceLabel(signal.source);
+  const productLabel = signal.product?.trim() || signal.strategyName?.trim() || "";
   const pnlLabel =
     typeof signal.pnlPercent === "number"
       ? `${signal.pnlPercent > 0 ? "+" : ""}${signal.pnlPercent.toFixed(2)}%`
@@ -81,7 +82,9 @@ function SignalCard({ signal }: SignalCardProps) {
       >
         {createdAtLabel ? <MetadataPill label={`Created ${createdAtLabel}`} /> : null}
         {closedAtLabel ? <MetadataPill label={`Closed ${closedAtLabel}`} /> : null}
+        {productLabel ? <MetadataPill label={productLabel} /> : null}
         {sourceLabel ? <MetadataPill label={`Channel ${sourceLabel}`} /> : null}
+        {signal.marketState ? <MetadataPill label={formatMarketState(signal.marketState)} /> : null}
         <MetadataPill label={`Status ${signal.status}`} />
         {signal.outcome ? <MetadataPill label={`Outcome ${signal.outcome}`} /> : null}
         {pnlLabel ? <MetadataPill label={`PnL ${pnlLabel}`} /> : null}
@@ -184,7 +187,29 @@ function formatSourceLabel(source?: string) {
     return "Automated";
   }
 
+  if (normalizedSource.toLowerCase() === "tradingview") {
+    return "TradingView";
+  }
+
+  if (normalizedSource.toLowerCase() === "tradingview-relay") {
+    return "SignalForge Relay";
+  }
+
   return normalizedSource;
+}
+
+function formatMarketState(value: string) {
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  return normalizedValue
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((segment) => `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`)
+    .join(" ");
 }
 
 const formatSignalDate = (value: unknown) => {

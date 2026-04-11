@@ -46,10 +46,21 @@ service cloud.firestore {
         "stripeSubscriptionId",
         "cancelAtPeriodEnd",
         "subscriptionEndsAt",
+        "webhookEnabled",
         "termsAccepted",
         "privacyAccepted",
         "termsVersion",
         "termsAcceptedAt"
+      ];
+    }
+
+    function webhookDocumentKeys() {
+      return [
+        "enabled",
+        "url",
+        "secret",
+        "assetFilters",
+        "updatedAt"
       ];
     }
 
@@ -58,6 +69,20 @@ service cloud.firestore {
         && (!("privacyAccepted" in request.resource.data) || request.resource.data.privacyAccepted == true)
         && (!("termsVersion" in request.resource.data) || request.resource.data.termsVersion == currentTermsVersion())
         && (!("termsAcceptedAt" in request.resource.data) || request.resource.data.termsAcceptedAt is timestamp);
+    }
+
+    function webhookEnabledFieldIsValid() {
+      return !("webhookEnabled" in request.resource.data) || request.resource.data.webhookEnabled is bool;
+    }
+
+    function webhookDocumentIsValid() {
+      return request.resource.data.keys().hasOnly(webhookDocumentKeys())
+        && request.resource.data.enabled is bool
+        && request.resource.data.url is string
+        && request.resource.data.secret is string
+        && request.resource.data.assetFilters is list
+        && request.resource.data.assetFilters.size() <= 100
+        && request.resource.data.updatedAt == request.time;
     }
 
     function isValidUserProfileCreate() {
@@ -71,6 +96,7 @@ service cloud.firestore {
         && request.resource.data.approved is bool
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
+        && webhookEnabledFieldIsValid()
         && legalFieldsAreValid();
     }
 
@@ -99,11 +125,6 @@ service cloud.firestore {
         && (!(resource.data.termsAccepted == true) || request.resource.data.termsAccepted == true)
         && (!(resource.data.privacyAccepted == true) || request.resource.data.privacyAccepted == true)
         && (
-          !("termsVersion" in resource.data)
-          || resource.data.termsVersion == currentTermsVersion()
-          || request.resource.data.termsVersion == resource.data.termsVersion
-        )
-        && (
           !("termsVersion" in request.resource.data)
           || request.resource.data.termsVersion == currentTermsVersion()
         );
@@ -114,6 +135,12 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow update: if isOwner(userId) && isValidUserProfileUpdate();
       allow delete: if false;
+
+      match /webhooks/{webhookId} {
+        allow read: if isOwner(userId);
+        allow create, update: if false;
+        allow delete: if false;
+      }
     }
 
     match /signals/{signalId} {

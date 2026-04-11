@@ -38,7 +38,7 @@ function LegalConsentPage() {
       await acceptLegalDocuments(currentUser.uid, CURRENT_TERMS_VERSION);
       await refreshProfile();
       navigate(nextPath, { replace: true });
-    } catch {
+    } catch (error) {
       setError("We could not record your legal acceptance. Please try again.");
       setIsSubmitting(false);
     }
@@ -68,8 +68,8 @@ function LegalConsentPage() {
         <div style={{ display: "grid", gap: "0.65rem" }}>
           <h2 style={sectionTitleStyle}>Privacy summary</h2>
           <p style={bodyStyle}>
-            SignalForge IQ uses account, billing, support, and technical usage data to operate
-            the service, secure accounts, support subscriptions, and maintain the platform.
+            SignalForge IQ uses account, billing, support, and service activity information to run
+            the service, protect accounts, support subscriptions, and improve the member experience.
           </p>
         </div>
 

@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { getEffectiveManagedPlan, isAutomationDeliveryEligible } from "../access.js";
 import { buildSignalWebhookPayload } from "../services/payloadBuilder.js";
 import { sendWebhookDelivery, type WebhookDeliveryRecord } from "../services/webhookDelivery.js";
 
@@ -8,7 +9,7 @@ const USERS_COLLECTION = "users";
 const WEBHOOK_DELIVERIES_COLLECTION = "webhookDeliveries";
 const DEFAULT_WEBHOOK_ID = "default";
 
-type ManagedPlan = "free" | "pro" | "elite" | "platinum" | "admin";
+type ManagedPlan = "free" | "pro" | "elite" | "admin";
 
 type SignalDocument = {
   symbol?: string;
@@ -51,6 +52,12 @@ type UserProfile = {
   role?: string;
   plan?: string;
   currentPlan?: string;
+  billingStatus?: string;
+  cancelAtPeriodEnd?: boolean;
+  subscriptionEndsAt?: Timestamp | null;
+  termsAccepted?: boolean;
+  privacyAccepted?: boolean;
+  termsVersion?: string;
 };
 
 const toTrimmedText = (value: unknown) => {
@@ -60,41 +67,6 @@ const toTrimmedText = (value: unknown) => {
 
   const trimmedValue = value.trim();
   return trimmedValue || null;
-};
-
-const normalizeManagedPlan = (value: unknown): ManagedPlan => {
-  if (value === "admin") {
-    return "admin";
-  }
-
-  if (value === "platinum") {
-    return "platinum";
-  }
-
-  if (value === "elite") {
-    return "elite";
-  }
-
-  if (value === "pro") {
-    return "pro";
-  }
-
-  return "free";
-};
-
-const hasPaidAccess = (profile: UserProfile) => {
-  const role = toTrimmedText(profile.role)?.toLowerCase();
-  const currentPlan = normalizeManagedPlan(profile.currentPlan ?? profile.plan);
-
-  if (role === "admin" || currentPlan === "admin") {
-    return true;
-  }
-
-  if (typeof profile.subscriptionActive === "boolean") {
-    return profile.subscriptionActive;
-  }
-
-  return currentPlan === "pro" || currentPlan === "elite" || currentPlan === "platinum";
 };
 
 const normalizeDelaySeconds = (value: unknown) => {
@@ -177,13 +149,6 @@ const normalizeEndpoint = (
   };
 };
 
-const isUserEligible = (profile: UserProfile) => (
-  hasPaidAccess(profile)
-  && profile.approved === true
-  && profile.webhookEnabled === true
-  && toTrimmedText(profile.status)?.toLowerCase() === "active"
-);
-
 const buildSignalInput = (signalId: string, signal: SignalDocument) => ({
   signalId,
   symbol: toTrimmedText(signal.symbol) ?? "",
@@ -242,12 +207,12 @@ export const deliverSignalToSubscribers = onDocumentCreated(
     const db = getFirestore();
     const usersSnapshot = await db
       .collection(USERS_COLLECTION)
-      .where("subscriptionActive", "==", true)
+      .where("webhookEnabled", "==", true)
       .get();
     logger.info("User query completed for subscriber delivery.", {
       signalId,
       usersMatchedByQuery: usersSnapshot.size,
-      query: "subscriptionActive == true",
+      query: "webhookEnabled == true",
     });
 
     const immediateDeliveries: Array<{
@@ -259,7 +224,7 @@ export const deliverSignalToSubscribers = onDocumentCreated(
 
     for (const userDocument of usersSnapshot.docs) {
       const profile = userDocument.data() as UserProfile;
-      const normalizedPlan = normalizeManagedPlan(profile.currentPlan ?? profile.plan);
+      const normalizedPlan = getEffectiveManagedPlan(profile);
       const normalizedStatus = toTrimmedText(profile.status)?.toLowerCase() ?? null;
 
       logger.info("Evaluating user for signal delivery.", {
@@ -272,18 +237,14 @@ export const deliverSignalToSubscribers = onDocumentCreated(
         status: normalizedStatus,
       });
 
-      // This trigger previously returned zero users because it relied on a broad full-collection
-      // scan plus stricter in-code gates such as phoneVerified/legal acceptance and inline webhook
-      // config fields. In the confirmed Firestore shape for this feature, the meaningful gates are
-      // subscriptionActive, approved, webhookEnabled, status === "active", and the default webhook
-      // document at users/{uid}/webhooks/default. If any of those older assumptions are missing,
-      // eligible subscribers can be skipped and createdDeliveryCount stays at zero.
-      if (!isUserEligible(profile)) {
+      if (!isAutomationDeliveryEligible(profile)) {
         logger.warn("User skipped before webhook lookup because profile gates did not pass.", {
           signalId,
           userId: userDocument.id,
           plan: normalizedPlan,
           approved: profile.approved ?? null,
+          billingStatus: profile.billingStatus ?? null,
+          cancelAtPeriodEnd: profile.cancelAtPeriodEnd ?? null,
           webhookEnabled: profile.webhookEnabled ?? null,
           status: normalizedStatus,
         });
@@ -385,7 +346,6 @@ export const deliverSignalToSubscribers = onDocumentCreated(
         subscriberId: userDocument.id,
         userId: userDocument.id,
         destinationUrl: endpoint.destinationUrl,
-        signingSecret: endpoint.signingSecret,
         plan: endpoint.plan,
         delaySeconds: endpoint.delaySeconds,
         payload,
@@ -403,7 +363,6 @@ export const deliverSignalToSubscribers = onDocumentCreated(
         signalId,
         userId: userDocument.id,
         deliveryId: deliveryReference.id,
-        destinationUrl: endpoint.destinationUrl,
         delaySeconds: endpoint.delaySeconds,
         plan: endpoint.plan,
       });

@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
@@ -29,10 +30,46 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY;
+const appCheckDebugToken = import.meta.env.VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN;
+let appCheckInitialized = false;
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
+export function initializeFirebaseAppCheck() {
+  if (appCheckInitialized || typeof window === "undefined") {
+    return;
+  }
+
+  if (typeof appCheckSiteKey !== "string" || !appCheckSiteKey.trim()) {
+    return;
+  }
+
+  if (typeof appCheckDebugToken === "string" && appCheckDebugToken.trim()) {
+    window.FIREBASE_APPCHECK_DEBUG_TOKEN = appCheckDebugToken.trim() === "true"
+      ? true
+      : appCheckDebugToken.trim();
+  }
+
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey.trim()),
+      isTokenAutoRefreshEnabled: true,
+    });
+
+    appCheckInitialized = true;
+  } catch {
+    appCheckInitialized = false;
+  }
+}
+
 export default app;
+
+declare global {
+  interface Window {
+    FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean;
+  }
+}
 

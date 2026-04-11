@@ -8,12 +8,22 @@ import {
 } from "firebase/auth";
 import type { AuthError } from "firebase/auth";
 import {
-  acceptLegalDocuments,
   getOrCreateUserProfile,
   CURRENT_TERMS_VERSION,
   normalizeEmail,
 } from "./userProfiles";
-import { deleteUser } from "firebase/auth";
+
+type ProfileBootstrapError = Error & {
+  code: string;
+};
+
+const createProfileBootstrapError = (): ProfileBootstrapError => {
+  const error = new Error(
+    "We couldn't finish setting up your account. Please try again."
+  ) as ProfileBootstrapError;
+  error.code = "profile/bootstrap-failed";
+  return error;
+};
 
 export const signUp = async (
   email: string,
@@ -32,31 +42,27 @@ export const signUp = async (
       await updateProfile(credential.user, { displayName: fullName });
     }
 
-    await getOrCreateUserProfile(credential.user);
-
-    if (options?.acceptLegal) {
-      await acceptLegalDocuments(
-        credential.user.uid,
-        options.termsVersion ?? CURRENT_TERMS_VERSION
-      );
-    }
+    await getOrCreateUserProfile(credential.user, {
+      acceptLegal: options?.acceptLegal,
+      termsVersion: options?.termsVersion ?? CURRENT_TERMS_VERSION,
+    });
 
     return credential;
   } catch (error) {
-    try {
-      await deleteUser(credential.user);
-    } catch {
-      // If cleanup fails, route guards still prevent protected access without consent.
-    }
-
-    throw error;
+    await firebaseSignOut(auth).catch(() => undefined);
+    throw createProfileBootstrapError();
   }
 };
 
 export const signIn = async (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
   const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-  await getOrCreateUserProfile(credential.user);
+  try {
+    await getOrCreateUserProfile(credential.user);
+  } catch (error) {
+    await firebaseSignOut(auth).catch(() => undefined);
+    throw createProfileBootstrapError();
+  }
   return credential;
 };
 
@@ -73,7 +79,7 @@ export const getAuthErrorMessage = (error: unknown) => {
 
   switch (code) {
     case "auth/email-already-in-use":
-      return "An account with this email already exists.";
+      return "An account with this email already exists. Try logging in instead.";
     case "auth/invalid-email":
       return "Enter a valid email address.";
     case "auth/missing-password":
@@ -90,6 +96,10 @@ export const getAuthErrorMessage = (error: unknown) => {
       return "Network error. Check your connection and try again.";
     case "auth/missing-email":
       return "Enter your email address.";
+    case "permission-denied":
+    case "firestore/permission-denied":
+    case "profile/bootstrap-failed":
+      return "We couldn't finish setting up your account. Please try again.";
     default:
       return "Something went wrong. Please try again.";
   }

@@ -120,7 +120,7 @@ function App() {
             <Route
               path="performance"
               element={
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requirePro>
                   <PerformanceOverview />
                 </ProtectedRoute>
               }
@@ -128,7 +128,7 @@ function App() {
             <Route
               path="trades"
               element={
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requirePro>
                   <TradesPage />
                 </ProtectedRoute>
               }
@@ -136,7 +136,7 @@ function App() {
             <Route
               path="analytics"
               element={
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requirePro>
                   <AnalyticsPage />
                 </ProtectedRoute>
               }
@@ -144,7 +144,9 @@ function App() {
             <Route
               path="automation"
               element={
-                <AutomationPage />
+                <ProtectedRoute requireAutomation redirectTo="/upgrade?plan=elite&from=automation">
+                  <AutomationPage />
+                </ProtectedRoute>
               }
             />
           </Route>

@@ -1,3 +1,5 @@
+import { enforceRateLimit, getRequestId, getRequestIp } from "../lib/securityRateLimit.js";
+
 const RATE_LIMIT_WINDOW_MS = Number(process.env.CONTACT_RATE_LIMIT_WINDOW_MS ?? 10 * 60 * 1000);
 const RATE_LIMIT_MAX = Number(process.env.CONTACT_RATE_LIMIT_MAX ?? 5);
 const MAIL_SERVICE_URL = "https://api.resend.com/emails";
@@ -5,13 +7,13 @@ const MAIL_SERVICE_KEY = process.env.RESEND_API_KEY ?? process.env.CONTACT_EMAIL
 const MAIL_FROM = process.env.CONTACT_EMAIL_FROM ?? "";
 const MAIL_TO = "support@signalforgeiq.com";
 
-const rateLimitStore = new Map();
-
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  const requestId = getRequestId(req);
 
-  console.log("[contact] Request received", {
+  logInfo("request received", {
+    requestId,
     method: req.method,
     url: req.url,
   });
@@ -24,20 +26,33 @@ export default async function handler(req, res) {
     });
   }
 
-  const clientIp = getClientIp(req);
+  const clientIp = getRequestIp(req);
+  const rateLimit = await enforceRateLimit({
+    route: "api/contact",
+    identifier: clientIp,
+    limit: RATE_LIMIT_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
 
-  if (isRateLimited(clientIp)) {
-    res.setHeader("Retry-After", String(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)));
-    console.warn("[contact] Rate limit exceeded", { clientIp });
+  if (!rateLimit.allowed) {
+    res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+    logWarn("rate limit exceeded", {
+      requestId,
+      clientIp,
+      retryAfterSeconds: rateLimit.retryAfterSeconds,
+    });
     return res.status(429).json({
       success: false,
-      error: "Too many requests",
+      error: "Too many requests. Please wait and try again.",
     });
   }
 
   const mailConfigValidation = validateMailConfig();
   if (!mailConfigValidation.valid) {
-    console.error("[contact] Email configuration invalid", mailConfigValidation);
+    logError("email configuration invalid", {
+      requestId,
+      issueCount: mailConfigValidation.issueCount,
+    });
     return res.status(500).json({
       success: false,
       error: "Contact service is temporarily unavailable",
@@ -47,7 +62,7 @@ export default async function handler(req, res) {
   const payload = parseBody(req.body);
 
   if (!payload) {
-    console.warn("[contact] Invalid JSON body");
+    logWarn("invalid json body", { requestId });
     return res.status(400).json({
       success: false,
       error: "Invalid request body",
@@ -57,14 +72,17 @@ export default async function handler(req, res) {
   const sanitizedInput = sanitizeContactInput(payload);
 
   if (sanitizedInput.company) {
-    console.log("[contact] Honeypot field populated; accepting silently");
+    logInfo("honeypot field populated", { requestId });
     return res.status(200).json({ success: true });
   }
 
   const inputValidation = validateContactInput(sanitizedInput);
-  console.log("[contact] Validation result", inputValidation);
 
   if (!inputValidation.valid) {
+    logWarn("validation failed", {
+      requestId,
+      errorCount: inputValidation.errors.length,
+    });
     return res.status(400).json({
       success: false,
       error: "Validation failed",
@@ -72,7 +90,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const emailSent = await sendSupportEmail(sanitizedInput);
+  const emailSent = await sendSupportEmail(sanitizedInput, requestId);
 
   if (!emailSent.success) {
     return res.status(500).json({
@@ -81,7 +99,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const autoReplySent = await sendAutoReplyEmail(sanitizedInput);
+  const autoReplySent = await sendAutoReplyEmail(sanitizedInput, requestId);
 
   if (!autoReplySent.success) {
     return res.status(500).json({
@@ -184,45 +202,7 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function getClientIp(req) {
-  const forwardedFor = req.headers["x-forwarded-for"];
-
-  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
-    return forwardedFor.split(",")[0].trim();
-  }
-
-  return req.socket?.remoteAddress ?? "unknown";
-}
-
-function isRateLimited(clientIp) {
-  const now = Date.now();
-
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (entry.expiresAt <= now) {
-      rateLimitStore.delete(key);
-    }
-  }
-
-  const existingEntry = rateLimitStore.get(clientIp);
-
-  if (!existingEntry || existingEntry.expiresAt <= now) {
-    rateLimitStore.set(clientIp, {
-      count: 1,
-      expiresAt: now + RATE_LIMIT_WINDOW_MS,
-    });
-    return false;
-  }
-
-  if (existingEntry.count >= RATE_LIMIT_MAX) {
-    return true;
-  }
-
-  existingEntry.count += 1;
-  rateLimitStore.set(clientIp, existingEntry);
-  return false;
-}
-
-async function sendSupportEmail(input) {
+async function sendSupportEmail(input, requestId) {
   return sendEmail({
     to: [MAIL_TO],
     subject: "New Contact Form Message",
@@ -240,10 +220,11 @@ async function sendSupportEmail(input) {
       input.message,
     ].join("\n"),
     replyTo: input.email,
+    requestId,
   });
 }
 
-async function sendAutoReplyEmail(input) {
+async function sendAutoReplyEmail(input, requestId) {
   return sendEmail({
     to: [input.email],
     subject: "We received your message",
@@ -256,10 +237,11 @@ async function sendAutoReplyEmail(input) {
       "",
       "- SignalForge Support",
     ].join("\n"),
+    requestId,
   });
 }
 
-async function sendEmail({ to, subject, text, replyTo }) {
+async function sendEmail({ to, subject, text, replyTo, requestId }) {
   const requestBody = {
     from: MAIL_FROM,
     to,
@@ -268,10 +250,10 @@ async function sendEmail({ to, subject, text, replyTo }) {
     ...(replyTo ? { reply_to: replyTo } : {}),
   };
 
-  console.log("[contact] Sending email via Resend", {
-    to,
+  logInfo("sending email via provider", {
+    requestId,
+    recipientCount: to.length,
     subject,
-    from: MAIL_FROM,
     hasReplyTo: Boolean(replyTo),
   });
 
@@ -288,34 +270,36 @@ async function sendEmail({ to, subject, text, replyTo }) {
     const responseBody = await parseServiceResponse(response);
 
     if (!response.ok) {
-      const errorDetails = {
+      logError("email provider request failed", {
+        requestId,
         status: response.status,
         statusText: response.statusText,
-        body: responseBody,
-      };
-
-      console.error("[contact] Resend send failed", errorDetails);
-
-      if (looksLikeUnverifiedSender(responseBody)) {
-        console.error(
-          "[contact] Resend rejected the sender. Verify CONTACT_EMAIL_FROM in Resend and use a verified sending domain."
-        );
-      }
+        unverifiedSenderLikely: looksLikeUnverifiedSender(responseBody),
+      });
 
       return {
         success: false,
-        error: errorDetails,
+        error: {
+          status: response.status,
+          statusText: response.statusText,
+        },
       };
     }
 
-    console.log("[contact] Resend send succeeded", responseBody);
+    logInfo("email provider request succeeded", {
+      requestId,
+      status: response.status,
+    });
 
     return {
       success: true,
-      data: responseBody,
+      data: responseBody ? { ok: true } : null,
     };
   } catch (error) {
-    console.error("[contact] Resend request threw", serializeError(error));
+    logError("email provider request threw", {
+      requestId,
+      error: serializeError(error),
+    });
 
     return {
       success: false,
@@ -328,19 +312,18 @@ function validateMailConfig() {
   const issues = [];
 
   if (!MAIL_SERVICE_KEY) {
-    issues.push("RESEND_API_KEY is missing");
+    issues.push("missing-mail-service-key");
   }
 
   if (!MAIL_FROM) {
-    issues.push("CONTACT_EMAIL_FROM is missing");
+    issues.push("missing-mail-from");
   } else if (!isValidEmail(MAIL_FROM)) {
-    issues.push("CONTACT_EMAIL_FROM must be a valid email address");
+    issues.push("invalid-mail-from");
   }
 
   return {
     valid: issues.length === 0,
-    issues,
-    from: MAIL_FROM || null,
+    issueCount: issues.length,
   };
 }
 
@@ -371,11 +354,22 @@ function serializeError(error) {
     return {
       name: error.name,
       message: error.message,
-      stack: error.stack,
     };
   }
 
   return {
     message: String(error),
   };
+}
+
+function logInfo(message, metadata) {
+  console.log("[contact]", message, metadata);
+}
+
+function logWarn(message, metadata) {
+  console.warn("[contact]", message, metadata);
+}
+
+function logError(message, metadata) {
+  console.error("[contact]", message, metadata);
 }
