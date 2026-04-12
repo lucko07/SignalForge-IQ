@@ -33,6 +33,7 @@ service cloud.firestore {
     function userProfileKeys() {
       return [
         "email",
+        "fullName",
         "role",
         "plan",
         "subscriptionActive",
@@ -89,6 +90,10 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly(userProfileKeys())
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
+        && (!("fullName" in request.resource.data) || (
+          request.resource.data.fullName is string
+          && request.resource.data.fullName.size() > 0
+        ))
         && request.resource.data.role == "user"
         && request.resource.data.plan == "free"
         && request.resource.data.subscriptionActive == false
@@ -103,6 +108,7 @@ service cloud.firestore {
     function isValidUserProfileUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "email",
+          "fullName",
           "phoneVerified",
           "approved",
           "createdAt",
@@ -114,6 +120,10 @@ service cloud.firestore {
         ])
         && request.resource.data.email is string
         && request.resource.data.email.size() > 0
+        && (!("fullName" in request.resource.data) || (
+          request.resource.data.fullName is string
+          && request.resource.data.fullName.size() > 0
+        ))
         && request.resource.data.role == resource.data.role
         && request.resource.data.plan == resource.data.plan
         && request.resource.data.subscriptionActive == resource.data.subscriptionActive

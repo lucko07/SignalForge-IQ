@@ -25,6 +25,24 @@ const createProfileBootstrapError = (): ProfileBootstrapError => {
   return error;
 };
 
+const isDevelopment = import.meta.env.DEV;
+
+const logBootstrapFailure = (stage: string, error: unknown, metadata?: Record<string, unknown>) => {
+  if (!isDevelopment) {
+    return;
+  }
+
+  const maybeError = error as { code?: unknown; message?: unknown; name?: unknown };
+
+  console.error("[auth-bootstrap]", stage, {
+    ...metadata,
+    code: typeof maybeError?.code === "string" ? maybeError.code : undefined,
+    message: typeof maybeError?.message === "string" ? maybeError.message : String(error),
+    name: typeof maybeError?.name === "string" ? maybeError.name : undefined,
+    error,
+  });
+};
+
 export const signUp = async (
   email: string,
   password: string,
@@ -42,13 +60,23 @@ export const signUp = async (
       await updateProfile(credential.user, { displayName: fullName });
     }
 
+    await credential.user.getIdToken(true);
+
     await getOrCreateUserProfile(credential.user, {
       acceptLegal: options?.acceptLegal,
+      fullName,
       termsVersion: options?.termsVersion ?? CURRENT_TERMS_VERSION,
     });
 
     return credential;
   } catch (error) {
+    logBootstrapFailure("signup bootstrap failed", error, {
+      uid: credential.user.uid,
+      email: credential.user.email,
+      hasDisplayName: Boolean(fullName),
+      acceptedLegal: options?.acceptLegal === true,
+      termsVersion: options?.termsVersion ?? CURRENT_TERMS_VERSION,
+    });
     await firebaseSignOut(auth).catch(() => undefined);
     throw createProfileBootstrapError();
   }
@@ -58,8 +86,13 @@ export const signIn = async (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
   const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
   try {
+    await credential.user.getIdToken();
     await getOrCreateUserProfile(credential.user);
   } catch (error) {
+    logBootstrapFailure("signin bootstrap failed", error, {
+      uid: credential.user.uid,
+      email: credential.user.email,
+    });
     await firebaseSignOut(auth).catch(() => undefined);
     throw createProfileBootstrapError();
   }

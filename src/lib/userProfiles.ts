@@ -2,6 +2,7 @@ import type { User } from "firebase/auth";
 import {
   doc,
   getDoc,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -20,6 +21,7 @@ export type ManagedPlan = (typeof managedPlans)[number];
 export type UserProfile = {
   uid: string;
   email: string;
+  fullName?: string;
   role: UserRole;
   plan: UserPlan;
   subscriptionActive: boolean;
@@ -40,13 +42,57 @@ export type UserProfile = {
 };
 
 export const CURRENT_TERMS_VERSION = "v1.0";
+const isDevelopment = import.meta.env.DEV;
 
 type CreateProfileOptions = {
   acceptLegal?: boolean;
+  fullName?: string;
   termsVersion?: string;
 };
 
 export const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
+const normalizeFullName = (value: string | null | undefined) => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue ? normalizedValue : undefined;
+};
+
+const getErrorDetails = (error: unknown) => {
+  if (error && typeof error === "object") {
+    const maybeError = error as { code?: unknown; message?: unknown; name?: unknown };
+    return {
+      code: typeof maybeError.code === "string" ? maybeError.code : undefined,
+      message: typeof maybeError.message === "string" ? maybeError.message : String(error),
+      name: typeof maybeError.name === "string" ? maybeError.name : undefined,
+    };
+  }
+
+  return {
+    code: undefined,
+    message: String(error),
+    name: undefined,
+  };
+};
+
+const logBootstrapDebug = (message: string, metadata: Record<string, unknown>) => {
+  if (!isDevelopment) {
+    return;
+  }
+
+  console.info("[profile-bootstrap]", message, metadata);
+};
+
+const logBootstrapError = (message: string, metadata: Record<string, unknown>) => {
+  if (!isDevelopment) {
+    return;
+  }
+
+  console.error("[profile-bootstrap]", message, metadata);
+};
 
 export const normalizeUserRole = (value: unknown): UserRole => (
   value === "admin" ? "admin" : "user"
@@ -139,6 +185,9 @@ export const mapUserProfileDocument = (
   return {
     uid,
     email: typeof normalizedData.email === "string" ? normalizeEmail(normalizedData.email) : "",
+    fullName: normalizeFullName(
+      typeof normalizedData.fullName === "string" ? normalizedData.fullName : undefined
+    ),
     role,
     plan,
     subscriptionActive: hasLegacySubscriptionAccess(normalizedData),
@@ -189,6 +238,11 @@ const buildDefaultProfilePayload = (
     updatedAt: serverTimestamp(),
   };
 
+  const normalizedFullName = normalizeFullName(options?.fullName ?? user.displayName);
+  if (normalizedFullName) {
+    payload.fullName = normalizedFullName;
+  }
+
   if (options?.acceptLegal) {
     payload.termsAccepted = true;
     payload.privacyAccepted = true;
@@ -208,6 +262,7 @@ const buildProfileRepairPayload = (
   const normalizedEmail = normalizeEmail(user.email ?? "");
   const nextPhoneVerified = Boolean(user.phoneNumber);
   const currentTermsVersion = options?.termsVersion ?? CURRENT_TERMS_VERSION;
+  const nextFullName = normalizeFullName(options?.fullName ?? user.displayName);
 
   if (normalizedEmail && existingData?.email !== normalizedEmail) {
     updates.email = normalizedEmail;
@@ -219,6 +274,10 @@ const buildProfileRepairPayload = (
 
   if (existingData?.approved === undefined) {
     updates.approved = true;
+  }
+
+  if (nextFullName && existingData?.fullName !== nextFullName) {
+    updates.fullName = nextFullName;
   }
 
   if (options?.acceptLegal) {
@@ -267,52 +326,78 @@ export const getOrCreateUserProfile = async (
   options?: CreateProfileOptions
 ) => {
   const userReference = doc(db, "users", user.uid);
-
-  let snapshot;
-
-  try {
-    snapshot = await getDoc(userReference);
-  } catch (error) {
-    throw error;
-  }
   const normalizedEmail = normalizeEmail(user.email ?? "");
   const nextPhoneVerified = Boolean(user.phoneNumber);
+  let transactionProfileData: Record<string, unknown> | undefined;
 
-  if (!snapshot.exists()) {
-    const defaultProfile = buildDefaultProfilePayload(user, options);
+  try {
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(userReference);
 
-    try {
-      await setDoc(userReference, defaultProfile);
-    } catch (error) {
-      throw error;
-    }
+      if (!snapshot.exists()) {
+        const defaultProfile = buildDefaultProfilePayload(user, options);
 
-    return mapUserProfileDocument(user.uid, {
-      ...defaultProfile,
-      email: normalizedEmail,
-      phoneVerified: nextPhoneVerified,
+        logBootstrapDebug("transaction create profile", {
+          functionName: "getOrCreateUserProfile",
+          uid: user.uid,
+          payload: defaultProfile,
+        });
+
+        transaction.set(userReference, defaultProfile);
+        transactionProfileData = {
+          ...defaultProfile,
+          email: normalizedEmail,
+          phoneVerified: nextPhoneVerified,
+        };
+        return;
+      }
+
+      const existingData = snapshot.data();
+      const repairPayload = buildProfileRepairPayload(existingData, user, options);
+
+      if (Object.keys(repairPayload).length > 0) {
+        logBootstrapDebug("transaction repair profile", {
+          functionName: "getOrCreateUserProfile",
+          uid: user.uid,
+          payload: repairPayload,
+        });
+
+        transaction.set(userReference, repairPayload, { merge: true });
+      }
+
+      transactionProfileData = {
+        ...existingData,
+        ...repairPayload,
+        email: normalizedEmail || existingData.email,
+        phoneVerified: nextPhoneVerified,
+      };
     });
+  } catch (error) {
+    logBootstrapError("transaction profile bootstrap failed", {
+      functionName: "getOrCreateUserProfile",
+      uid: user.uid,
+      errorDetails: getErrorDetails(error),
+      error,
+      options: {
+        acceptLegal: options?.acceptLegal === true,
+        hasFullName: Boolean(normalizeFullName(options?.fullName ?? user.displayName)),
+        termsVersion: options?.termsVersion ?? CURRENT_TERMS_VERSION,
+      },
+    });
+    throw error;
   }
 
-  const existingData = snapshot.data();
-  const repairPayload = buildProfileRepairPayload(existingData, user, options);
-
-  if (Object.keys(repairPayload).length > 0) {
-    await setDoc(userReference, repairPayload, { merge: true });
-  }
-
-  const existingProfile = mapUserProfileDocument(snapshot.id, {
-    ...existingData,
-    ...repairPayload,
-    email: normalizedEmail || existingData.email,
+  const profileData = transactionProfileData ?? {
+    email: normalizedEmail,
     phoneVerified: nextPhoneVerified,
-  });
+  };
+  const nextProfile = mapUserProfileDocument(user.uid, profileData);
 
   return {
-    ...existingProfile,
-    email: normalizedEmail || existingProfile.email,
-    phoneVerified: existingProfile.phoneVerified || nextPhoneVerified,
-    approved: existingProfile.approved,
+    ...nextProfile,
+    email: normalizedEmail || nextProfile.email,
+    phoneVerified: nextProfile.phoneVerified || nextPhoneVerified,
+    approved: nextProfile.approved,
   };
 };
 

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import EducationVideoSection from "../components/EducationVideoSection";
 import howTradingSignalsWorkImage from "../assets/education/How_A_Trading_signal_work.png";
 import workflowDiagramImage from "../assets/education/work_flow_diagram.png";
 import riskManagementImage from "../assets/education/Risk_Management.png";
@@ -116,30 +117,12 @@ function EducationPage() {
         </div>
       </div>
 
-      <article style={videoSectionCardStyle}>
-        <div style={videoSectionHeaderStyle}>
-          <p style={sectionEyebrowStyle}>Explainer Video</p>
-          <h2 style={sectionTitleStyle}>How Trading Signals Work</h2>
-        </div>
-
-        <div style={videoFrameStyle}>
-          <video
-            controls
-            preload="metadata"
-            playsInline
-            style={videoPlayerStyle}
-          >
-            <source src="/how-trading-signals-work/Signalforge_video2.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-        </div>
-
-        <p style={videoDescriptionStyle}>
-          This short explainer demonstrates how SignalForge IQ trading signals define
-          entry levels, stop-loss protection, and target prices while helping traders
-          structure their risk.
-        </p>
-      </article>
+      <EducationVideoSection
+        title="How SignalForge IQ Works"
+        eyebrow="48-Second Product Explainer"
+        ctaTo="/pricing"
+        ctaLabel="Explore Plans"
+      />
 
       <article style={sectionCardStyle}>
         <div style={twoColumnSectionStyle}>
@@ -386,43 +369,6 @@ const sectionCardStyle = {
   border: "1px solid #d0d5dd",
   backgroundColor: "#ffffff",
   boxShadow: "0 10px 30px rgba(16, 24, 40, 0.05)",
-};
-
-const videoSectionCardStyle = {
-  ...sectionCardStyle,
-  justifyItems: "center" as const,
-};
-
-const videoSectionHeaderStyle = {
-  display: "grid",
-  gap: "0.45rem",
-  width: "100%",
-  maxWidth: "900px",
-};
-
-const videoFrameStyle = {
-  width: "100%",
-  maxWidth: "900px",
-  borderRadius: "12px",
-  overflow: "hidden",
-  boxShadow: "0 14px 30px rgba(16, 24, 40, 0.08)",
-  backgroundColor: "#101828",
-};
-
-const videoPlayerStyle = {
-  display: "block",
-  width: "100%",
-  height: "auto",
-  aspectRatio: "16 / 9",
-  borderRadius: "12px",
-};
-
-const videoDescriptionStyle = {
-  margin: 0,
-  width: "100%",
-  maxWidth: "900px",
-  color: "#475467",
-  lineHeight: 1.7,
 };
 
 const twoColumnSectionStyle = {
