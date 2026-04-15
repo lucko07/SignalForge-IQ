@@ -105,6 +105,15 @@ export default async function handler(req, res) {
 
   try {
     normalizedEvent = validateAndNormalizeTradingViewPayload(payload);
+    logInfo("payload validated", {
+      requestId,
+      event: normalizedEvent.event,
+      eventId: normalizedEvent.eventId,
+      signalId: normalizedEvent.signalId ?? null,
+      tradeId: normalizedEvent.tradeId ?? null,
+      symbol: normalizedEvent.symbol,
+      side: normalizedEvent.side,
+    });
   } catch (error) {
     logWarn("validation failure", {
       requestId,
@@ -149,16 +158,18 @@ export default async function handler(req, res) {
         tradeId: result.tradeId,
         symbol: normalizedEvent.symbol,
         side: normalizedEvent.side,
+        status: result.status,
+        duplicate: result.duplicate,
       });
 
       return res.status(200).json({
         ok: true,
         event: normalizedEvent.event,
         eventId: normalizedEvent.eventId,
-        duplicate: false,
+        duplicate: Boolean(result.duplicate),
         signalId: result.signalId,
         tradeId: result.tradeId,
-        status: "entry-routed",
+        status: result.status,
       });
     }
 
@@ -172,6 +183,7 @@ export default async function handler(req, res) {
       tradeId: result.tradeId ?? null,
       signalId: result.signalId ?? null,
       duplicate: result.duplicate ?? false,
+      status: result.status,
     });
 
     return res.status(200).json({
@@ -182,7 +194,7 @@ export default async function handler(req, res) {
       tradeId: result.tradeId ?? null,
       signalId: result.signalId ?? null,
       backend: sanitizeBackendResponse(result.backend),
-      status: "exit-routed",
+      status: result.status,
     });
   } catch (error) {
     logError("backend failure", {
@@ -217,10 +229,24 @@ async function routeEntryEvent(normalizedEvent, relayEventReference) {
     ]);
 
     if (relayEventSnapshot.exists || signalSnapshot.exists) {
+      if (!relayEventSnapshot.exists) {
+        transaction.set(relayEventReference, buildRelayEventDocument({
+          normalizedEvent,
+          status: "already_processed",
+          signalId,
+          tradeId,
+          metadata: {
+            collection: SIGNALS_COLLECTION,
+            duplicateReason: signalSnapshot.exists ? "signal-exists" : "relay-event-exists",
+          },
+        }));
+      }
+
       return {
         duplicate: true,
         signalId,
         tradeId,
+        status: "already_processed",
       };
     }
 
@@ -239,6 +265,7 @@ async function routeEntryEvent(normalizedEvent, relayEventReference) {
       duplicate: false,
       signalId: signalReference.id,
       tradeId: signalReference.id,
+      status: "entry-routed",
     };
   });
 
@@ -253,6 +280,17 @@ async function routeExitEvent(normalizedEvent, relayEventReference) {
   const matchingTrade = await findLatestOpenTrade({
     symbol: normalizedEvent.symbol,
     side: normalizedEvent.side,
+  });
+
+  logInfo("exit broker pre-check complete", {
+    eventId: normalizedEvent.eventId,
+    signalId: normalizedEvent.signalId ?? null,
+    tradeId: normalizedEvent.tradeId ?? null,
+    symbol: normalizedEvent.symbol,
+    side: normalizedEvent.side,
+    matchedTradeId: matchingTrade?.tradeId ?? null,
+    matchedSignalId: matchingTrade?.signalId ?? null,
+    matchedBy: matchingTrade?.matchedBy ?? null,
   });
 
   const backendPayload = {
@@ -288,17 +326,19 @@ async function routeExitEvent(normalizedEvent, relayEventReference) {
 
   await relayEventReference.set(buildRelayEventDocument({
     normalizedEvent,
-    status: "exit-routed",
+    status: backend.result?.status ?? "exit-routed",
     signalId: matchingTrade?.signalId ?? backend.signalId ?? null,
     tradeId: matchingTrade?.tradeId ?? backend.tradeId ?? null,
     metadata: {
       matchedBy: matchingTrade?.matchedBy ?? null,
+      relayClassification: backend.result?.status ?? "exit-routed",
       backendStatus: backend.result?.status ?? null,
       backendDuplicate: Boolean(backend.result?.duplicate),
     },
   }));
 
   return {
+    status: backend.result?.status ?? "exit-routed",
     tradeId: matchingTrade?.tradeId ?? backend.tradeId ?? null,
     signalId: matchingTrade?.signalId ?? backend.signalId ?? null,
     duplicate: Boolean(backend.result?.duplicate),
@@ -695,11 +735,14 @@ function sanitizeBackendResponse(value) {
 
   return {
     ok: Boolean(value.ok),
+    status: typeof value.status === "string" ? value.status : null,
     tradeId: typeof value.tradeId === "string" ? value.tradeId : null,
     signalId: typeof value.signalId === "string" ? value.signalId : null,
     duplicate: Boolean(value.duplicate),
     alreadyClosed: Boolean(value.alreadyClosed),
     result: typeof value.result === "string" ? value.result : null,
+    closeReason: typeof value.closeReason === "string" ? value.closeReason : null,
+    matchedBy: typeof value.matchedBy === "string" ? value.matchedBy : null,
     error: typeof value.error === "string" ? value.error : null,
   };
 }

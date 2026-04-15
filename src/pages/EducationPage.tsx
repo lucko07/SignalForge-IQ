@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import EducationVideoSection from "../components/EducationVideoSection";
 import howTradingSignalsWorkImage from "../assets/education/How_A_Trading_signal_work.png";
+import educationVideoPoster from "../assets/education/how-signalforge-iq-works-poster.svg";
 import workflowDiagramImage from "../assets/education/work_flow_diagram.png";
 import riskManagementImage from "../assets/education/Risk_Management.png";
 import exampleSignalCardImage from "../assets/education/Example_signal_card.png";
@@ -118,10 +119,13 @@ function EducationPage() {
       </div>
 
       <EducationVideoSection
-        title="How SignalForge IQ Works"
-        eyebrow="48-Second Product Explainer"
+        title="See how SignalForge IQ works"
+        eyebrow="How It Works"
+        captionsUrl="/education/how-signalforge-iq-works.vtt"
         ctaTo="/pricing"
-        ctaLabel="Explore Plans"
+        ctaLabel="Compare Plans"
+        posterUrl={educationVideoPoster}
+        videoUrl="/assets/videos/signalforge-v4.mp4"
       />
 
       <article style={sectionCardStyle}>

@@ -85,17 +85,23 @@ export const signUp = async (
 export const signIn = async (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
   const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-  try {
-    await credential.user.getIdToken();
-    await getOrCreateUserProfile(credential.user);
-  } catch (error) {
-    logBootstrapFailure("signin bootstrap failed", error, {
+
+  if (isDevelopment) {
+    console.info("[auth-login] auth success", {
       uid: credential.user.uid,
       email: credential.user.email,
     });
-    await firebaseSignOut(auth).catch(() => undefined);
-    throw createProfileBootstrapError();
   }
+
+  try {
+    await credential.user.getIdToken();
+  } catch (error) {
+    logBootstrapFailure("signin token refresh failed", error, {
+      uid: credential.user.uid,
+      email: credential.user.email,
+    });
+  }
+
   return credential;
 };
 

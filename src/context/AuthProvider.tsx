@@ -5,6 +5,7 @@ import { auth, hasRequiredFirebaseClientConfig } from "../lib/firebase";
 import type { UserProfile } from "../lib/userProfiles";
 import {
   getOrCreateUserProfile,
+  getUserProfile,
   hasAcceptedLegal,
   hasEliteAccess,
   hasProAccess,
@@ -29,7 +30,7 @@ function AuthProvider({ children }: AuthProviderProps) {
     }
 
     try {
-      const nextProfile = await getOrCreateUserProfile(auth.currentUser);
+      const nextProfile = await getOrCreateUserProfile(auth.currentUser, { repairExisting: false });
       setProfile(nextProfile);
     } catch (error) {
       throw error;
@@ -50,13 +51,61 @@ function AuthProvider({ children }: AuthProviderProps) {
       }
 
       try {
-        const nextProfile = await getOrCreateUserProfile(user);
+        if (import.meta.env.DEV) {
+          console.info("[auth-provider] auth success", {
+            uid: user.uid,
+            email: user.email,
+          });
+          console.info("[auth-provider] profile read start", {
+            uid: user.uid,
+          });
+        }
+
+        const nextProfile = await getOrCreateUserProfile(user, { repairExisting: false });
+
+        if (import.meta.env.DEV) {
+          console.info("[auth-provider] profile read success", {
+            uid: user.uid,
+          });
+        }
+
         setCurrentUser(user);
         setProfile(nextProfile);
       } catch (error) {
-        setCurrentUser(null);
-        setProfile(null);
-        await firebaseSignOut(auth).catch(() => undefined);
+        if (import.meta.env.DEV) {
+          console.error("[auth-provider] profile bootstrap failed", error);
+        }
+
+        try {
+          const fallbackProfile = await getUserProfile(user.uid);
+
+          if (fallbackProfile) {
+            if (import.meta.env.DEV) {
+              console.info("[auth-provider] profile fallback read success", {
+                uid: user.uid,
+              });
+            }
+
+            setCurrentUser(user);
+            setProfile(fallbackProfile);
+          } else {
+            if (import.meta.env.DEV) {
+              console.error("[auth-provider] profile fallback missing", {
+                uid: user.uid,
+              });
+            }
+            setCurrentUser(null);
+            setProfile(null);
+            await firebaseSignOut(auth).catch(() => undefined);
+          }
+        } catch (fallbackError) {
+          if (import.meta.env.DEV) {
+            console.error("[auth-provider] profile fallback read failed", fallbackError);
+          }
+          setCurrentUser(null);
+          setProfile(null);
+          await firebaseSignOut(auth).catch(() => undefined);
+        }
       } finally {
         setLoading(false);
       }

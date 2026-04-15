@@ -1,0 +1,72 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#0B1220"/>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="1308" cy="154" r="278" fill="url(#glow)" fill-opacity="0.32"/>
+  <circle cx="244" cy="812" r="240" fill="url(#glow2)" fill-opacity="0.18"/>
+
+  <rect x="88" y="86" width="1424" height="728" rx="36" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.10)"/>
+
+  <text x="140" y="166" fill="#9FB0C7" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="4">SIGNALFORGE IQ</text>
+  <text x="140" y="252" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="72" font-weight="800">How SignalForge IQ Works</text>
+  <text x="140" y="308" fill="#D0D5DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="500">From signals to structured automation</text>
+
+  <g opacity="0.95">
+    <rect x="140" y="382" width="588" height="286" rx="28" fill="#111A2B" stroke="#24324A"/>
+    <text x="176" y="434" fill="#8AA0BC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="2">PHASED PROGRESSION</text>
+
+    <g>
+      <rect x="176" y="470" width="240" height="64" rx="18" fill="#0F172A" stroke="#253349"/>
+      <text x="200" y="508" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Phase 1</text>
+      <text x="428" y="508" fill="#D0D5DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Signals and analytics</text>
+    </g>
+
+    <g>
+      <rect x="176" y="548" width="240" height="64" rx="18" fill="#0F172A" stroke="#253349"/>
+      <text x="200" y="586" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Phase 2</text>
+      <text x="428" y="586" fill="#D0D5DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Elite execution readiness</text>
+    </g>
+
+    <g>
+      <rect x="176" y="626" width="240" height="64" rx="18" fill="#0F172A" stroke="#253349"/>
+      <text x="200" y="664" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Phase 3</text>
+      <text x="428" y="664" fill="#D0D5DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Alpaca paper trading first</text>
+    </g>
+  </g>
+
+  <g>
+    <rect x="784" y="382" width="658" height="286" rx="28" fill="#0F172A" stroke="#253349"/>
+    <rect x="824" y="430" width="578" height="164" rx="22" fill="#121C2E" stroke="#2B3C57"/>
+    <path d="M854 558C914 512 961 516 1011 460C1061 404 1110 420 1163 372C1216 324 1268 356 1370 292" stroke="#67E8F9" stroke-width="8" stroke-linecap="round"/>
+    <path d="M854 572C902 564 949 538 995 522C1041 506 1089 500 1136 454C1183 408 1237 434 1370 398" stroke="#FACC15" stroke-width="6" stroke-linecap="round" opacity="0.82"/>
+    <circle cx="1115" cy="476" r="10" fill="#F8FAFC"/>
+    <circle cx="1115" cy="476" r="22" fill="#F8FAFC" fill-opacity="0.10"/>
+    <text x="824" y="630" fill="#D0D5DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="500">Start with signals. Upgrade when ready. Automate with control.</text>
+  </g>
+
+  <g>
+    <rect x="1042" y="126" width="314" height="110" rx="24" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.12)"/>
+    <text x="1074" y="172" fill="#AFC2DA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="2">48-SECOND EXPLAINER</text>
+    <text x="1074" y="214" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">Premium product walkthrough</text>
+  </g>
+
+  <g>
+    <circle cx="770" cy="450" r="54" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.14)"/>
+    <path d="M748 420L800 450L748 480V420Z" fill="#FFFFFF"/>
+  </g>
+
+  <defs>
+    <linearGradient id="bg" x1="123" y1="96" x2="1520" y2="892" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="0.52" stop-color="#162234"/>
+      <stop offset="1" stop-color="#203757"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1308 154) rotate(90) scale(278)">
+      <stop stop-color="#93C5FD"/>
+      <stop offset="1" stop-color="#93C5FD" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(244 812) rotate(90) scale(240)">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

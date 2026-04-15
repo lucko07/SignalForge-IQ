@@ -133,3 +133,66 @@ export const isAutomationDeliveryEligible = (profile: AccessProfile | null | und
   && profile?.webhookEnabled === true
   && `${profile?.status ?? ""}`.trim().toLowerCase() === "active"
 );
+
+export type AutomationExecutionAccessResult =
+  | { allowed: true; reason: null; isAdmin: boolean; effectivePlan: ManagedPlan }
+  | {
+    allowed: false;
+    reason: "not-elite" | "inactive-subscription" | "not-approved" | "admin-only-paper-testing";
+    isAdmin: boolean;
+    effectivePlan: ManagedPlan;
+  };
+
+export const evaluateAutomationExecutionAccess = (
+  profile: AccessProfile | null | undefined,
+  options?: { adminOnly?: boolean }
+): AutomationExecutionAccessResult => {
+  const isAdmin = isAdminProfile(profile);
+  const effectivePlan = getEffectiveManagedPlan(profile);
+
+  if (options?.adminOnly) {
+    if (isAdmin) {
+      return { allowed: true, reason: null, isAdmin, effectivePlan };
+    }
+
+    return {
+      allowed: false,
+      reason: "admin-only-paper-testing",
+      isAdmin,
+      effectivePlan,
+    };
+  }
+
+  if (isAdmin) {
+    return { allowed: true, reason: null, isAdmin, effectivePlan };
+  }
+
+  if (profile?.approved === false) {
+    return {
+      allowed: false,
+      reason: "not-approved",
+      isAdmin,
+      effectivePlan,
+    };
+  }
+
+  if (profile?.subscriptionActive !== true) {
+    return {
+      allowed: false,
+      reason: "inactive-subscription",
+      isAdmin,
+      effectivePlan,
+    };
+  }
+
+  if (effectivePlan !== "elite") {
+    return {
+      allowed: false,
+      reason: "not-elite",
+      isAdmin,
+      effectivePlan,
+    };
+  }
+
+  return { allowed: true, reason: null, isAdmin, effectivePlan };
+};

@@ -294,6 +294,7 @@ export const closeTrade = async ({
       pnlPercent: computation.pnlPercent,
       pnlDollar: computation.pnlDollar,
       result: computation.result,
+      status: "closed",
       closeReason: computation.closeReason,
       updatedAt: FieldValue.serverTimestamp(),
     });

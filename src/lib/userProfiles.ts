@@ -48,6 +48,7 @@ type CreateProfileOptions = {
   acceptLegal?: boolean;
   fullName?: string;
   termsVersion?: string;
+  repairExisting?: boolean;
 };
 
 export const normalizeEmail = (value: string) => value.trim().toLowerCase();
@@ -328,9 +329,16 @@ export const getOrCreateUserProfile = async (
   const userReference = doc(db, "users", user.uid);
   const normalizedEmail = normalizeEmail(user.email ?? "");
   const nextPhoneVerified = Boolean(user.phoneNumber);
+  const repairExisting = options?.repairExisting !== false;
   let transactionProfileData: Record<string, unknown> | undefined;
 
   try {
+    logBootstrapDebug("profile read start", {
+      functionName: "getOrCreateUserProfile",
+      uid: user.uid,
+      repairExisting,
+    });
+
     await runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(userReference);
 
@@ -353,6 +361,22 @@ export const getOrCreateUserProfile = async (
       }
 
       const existingData = snapshot.data();
+      if (!repairExisting) {
+        logBootstrapDebug("profile read success without repair", {
+          functionName: "getOrCreateUserProfile",
+          uid: user.uid,
+        });
+        transactionProfileData = {
+          ...existingData,
+          email: normalizedEmail || existingData.email,
+          phoneVerified:
+            typeof existingData.phoneVerified === "boolean"
+              ? existingData.phoneVerified
+              : nextPhoneVerified,
+        };
+        return;
+      }
+
       const repairPayload = buildProfileRepairPayload(existingData, user, options);
 
       if (Object.keys(repairPayload).length > 0) {
@@ -371,6 +395,12 @@ export const getOrCreateUserProfile = async (
         email: normalizedEmail || existingData.email,
         phoneVerified: nextPhoneVerified,
       };
+    });
+
+    logBootstrapDebug("profile read success", {
+      functionName: "getOrCreateUserProfile",
+      uid: user.uid,
+      repairExisting,
     });
   } catch (error) {
     logBootstrapError("transaction profile bootstrap failed", {

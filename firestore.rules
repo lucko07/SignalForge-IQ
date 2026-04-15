@@ -65,6 +65,40 @@ service cloud.firestore {
       ];
     }
 
+    function brokerConnectionKeys() {
+      return [
+        "provider",
+        "mode",
+        "connected",
+        "lastValidatedAt",
+        "paperTradingEnabled",
+        "createdAt",
+        "updatedAt"
+      ];
+    }
+
+    function automationSettingsKeys() {
+      return [
+        "enabled",
+        "provider",
+        "mode",
+        "symbolAllowlist",
+        "longsEnabled",
+        "shortsEnabled",
+        "maxOpenPositions",
+        "maxTradesPerDay",
+        "sizingMode",
+        "notionalUsd",
+        "killSwitch",
+        "createdAt",
+        "updatedAt"
+      ];
+    }
+
+    function canReadSensitiveAutomationRecords(userId) {
+      return isOwner(userId) || isAdmin();
+    }
+
     function legalFieldsAreValid() {
       return (!("termsAccepted" in request.resource.data) || request.resource.data.termsAccepted == true)
         && (!("privacyAccepted" in request.resource.data) || request.resource.data.privacyAccepted == true)
@@ -84,6 +118,40 @@ service cloud.firestore {
         && request.resource.data.assetFilters is list
         && request.resource.data.assetFilters.size() <= 100
         && request.resource.data.updatedAt == request.time;
+    }
+
+    function automationSettingsDocumentIsValid() {
+      return request.resource.data.keys().hasOnly(automationSettingsKeys())
+        && request.resource.data.enabled is bool
+        && request.resource.data.provider == "alpaca"
+        && request.resource.data.mode == "paper"
+        && request.resource.data.symbolAllowlist is list
+        && request.resource.data.symbolAllowlist.size() > 0
+        && request.resource.data.symbolAllowlist.size() <= 25
+        && request.resource.data.longsEnabled is bool
+        && request.resource.data.shortsEnabled is bool
+        && request.resource.data.maxOpenPositions is int
+        && request.resource.data.maxOpenPositions > 0
+        && request.resource.data.maxTradesPerDay is int
+        && request.resource.data.maxTradesPerDay > 0
+        && request.resource.data.sizingMode == "fixed_notional"
+        && request.resource.data.notionalUsd is number
+        && request.resource.data.notionalUsd > 0
+        && request.resource.data.killSwitch is bool
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validAutomationSettingsCreate() {
+      return automationSettingsDocumentIsValid()
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validAutomationSettingsUpdate() {
+      return automationSettingsDocumentIsValid()
+        && (
+          !("createdAt" in resource.data)
+          || request.resource.data.createdAt == resource.data.createdAt
+        );
     }
 
     function isValidUserProfileCreate() {
@@ -151,6 +219,18 @@ service cloud.firestore {
         allow create, update: if false;
         allow delete: if false;
       }
+
+      match /brokerConnections/{connectionId} {
+        allow read: if canReadSensitiveAutomationRecords(userId);
+        allow create, update, delete: if false;
+      }
+
+      match /automationSettings/{settingsId} {
+        allow read: if canReadSensitiveAutomationRecords(userId);
+        allow create: if isOwner(userId) && settingsId == "default" && validAutomationSettingsCreate();
+        allow update: if isOwner(userId) && settingsId == "default" && validAutomationSettingsUpdate();
+        allow delete: if false;
+      }
     }
 
     match /signals/{signalId} {
@@ -173,6 +253,18 @@ service cloud.firestore {
       allow read: if hasMemberAccess();
       allow create, update: if isAdmin();
       allow delete: if false;
+    }
+
+    match /executions/{executionId} {
+      allow read: if isSignedIn() && (
+        isAdmin()
+        || (
+          "uid" in resource.data
+          && resource.data.uid is string
+          && resource.data.uid == request.auth.uid
+        )
+      );
+      allow create, update, delete: if false;
     }
 
     match /{document=**} {

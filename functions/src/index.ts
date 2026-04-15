@@ -255,3 +255,10 @@ export {
 export { saveAutomationSettings } from "./automation.js";
 export { deliverSignalToSubscribers } from "./triggers/deliverSignalToSubscribers";
 export { retryPendingWebhooks } from "./jobs/retryPendingWebhooks";
+export { executePaperTradeFromTrade } from "./execution/index.js";
+export {
+  runAdminPaperExecutionTest,
+  saveAlpacaPaperAutomationSettings,
+  testAlpacaConnection,
+} from "./execution/admin.js";
+export { reconcileAlpacaPaperExecutions } from "./execution/reconcile.js";

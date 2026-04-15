@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getAuthErrorMessage, resetPassword, signIn } from "../lib/auth";
+import { useAuth } from "../context/auth-context";
 
 function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { currentUser, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -13,6 +15,21 @@ function LoginPage() {
   const [resetError, setResetError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const nextPath = normalizeNextPath(searchParams.get("next"));
+
+  useEffect(() => {
+    if (loading || !currentUser) {
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      console.info("[login-page] redirect target", { nextPath, source: "auth-state-effect" });
+      console.info("[login-page] navigate", { nextPath, source: "auth-state-effect" });
+    }
+
+    setError("");
+    navigate(nextPath, { replace: true });
+  }, [currentUser, loading, navigate, nextPath]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,7 +51,13 @@ function LoginPage() {
 
     try {
       await signIn(email.trim(), password);
-      navigate(normalizeNextPath(searchParams.get("next")), { replace: true });
+
+      if (import.meta.env.DEV) {
+        console.info("[login-page] redirect target", { nextPath, source: "submit-handler" });
+        console.info("[login-page] navigate", { nextPath, source: "submit-handler" });
+      }
+
+      navigate(nextPath, { replace: true });
     } catch (loginError) {
       setError(getAuthErrorMessage(loginError));
     } finally {
@@ -83,6 +106,8 @@ function LoginPage() {
         <label style={{ display: "grid", gap: "0.4rem" }}>
           <span style={{ color: "#344054", fontWeight: 600 }}>Email</span>
           <input
+            id="login-email"
+            name="email"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -95,6 +120,8 @@ function LoginPage() {
         <label style={{ display: "grid", gap: "0.4rem" }}>
           <span style={{ color: "#344054", fontWeight: 600 }}>Password</span>
           <input
+            id="login-password"
+            name="password"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
