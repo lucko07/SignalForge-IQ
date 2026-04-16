@@ -13,6 +13,7 @@ import {
   canUseAutomation,
 } from "../lib/userProfiles";
 import { AuthContext } from "./auth-context";
+import { reloadCurrentUser } from "../lib/auth";
 
 type AuthProviderProps = {
   children: ReactNode;
@@ -23,18 +24,23 @@ function AuthProvider({ children }: AuthProviderProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(hasRequiredFirebaseClientConfig);
 
-  const refreshProfile = async () => {
-    if (!auth.currentUser) {
+  const syncAuthenticatedState = async () => {
+    const reloadedUser = await reloadCurrentUser().catch(() => auth.currentUser);
+    const activeUser = reloadedUser ?? auth.currentUser;
+
+    if (!activeUser) {
+      setCurrentUser(null);
       setProfile(null);
       return;
     }
 
-    try {
-      const nextProfile = await getOrCreateUserProfile(auth.currentUser, { repairExisting: false });
-      setProfile(nextProfile);
-    } catch (error) {
-      throw error;
-    }
+    const nextProfile = await getOrCreateUserProfile(activeUser, { repairExisting: false });
+    setCurrentUser(activeUser);
+    setProfile(nextProfile);
+  };
+
+  const refreshProfile = async () => {
+    await syncAuthenticatedState();
   };
 
   useEffect(() => {
@@ -51,25 +57,29 @@ function AuthProvider({ children }: AuthProviderProps) {
       }
 
       try {
+        const reloadedUser = await reloadCurrentUser().catch(() => user);
+        const activeUser = reloadedUser ?? auth.currentUser ?? user;
+
         if (import.meta.env.DEV) {
           console.info("[auth-provider] auth success", {
-            uid: user.uid,
-            email: user.email,
+            uid: activeUser.uid,
+            email: activeUser.email,
+            emailVerified: activeUser.emailVerified,
           });
           console.info("[auth-provider] profile read start", {
-            uid: user.uid,
+            uid: activeUser.uid,
           });
         }
 
-        const nextProfile = await getOrCreateUserProfile(user, { repairExisting: false });
+        const nextProfile = await getOrCreateUserProfile(activeUser, { repairExisting: false });
 
         if (import.meta.env.DEV) {
           console.info("[auth-provider] profile read success", {
-            uid: user.uid,
+            uid: activeUser.uid,
           });
         }
 
-        setCurrentUser(user);
+        setCurrentUser(activeUser);
         setProfile(nextProfile);
       } catch (error) {
         if (import.meta.env.DEV) {
@@ -121,6 +131,7 @@ function AuthProvider({ children }: AuthProviderProps) {
         profile,
         loading,
         isAuthenticated: Boolean(currentUser),
+        isEmailVerified: currentUser?.emailVerified === true,
         isAdmin: profile?.role === "admin",
         hasSubscriptionAccess: hasSubscriptionAccess(profile),
         hasProAccess: hasProAccess(profile),
@@ -128,6 +139,7 @@ function AuthProvider({ children }: AuthProviderProps) {
         canAccessAutomation: canUseAutomation(profile),
         hasLegalConsent: hasAcceptedLegal(profile),
         refreshProfile,
+        refreshAuthState: syncAuthenticatedState,
       }}
     >
       {children}

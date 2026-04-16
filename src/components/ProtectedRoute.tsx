@@ -27,6 +27,7 @@ function ProtectedRoute({
   const {
     currentUser,
     loading,
+    isEmailVerified,
     isAdmin,
     hasSubscriptionAccess,
     hasProAccess,
@@ -45,6 +46,11 @@ function ProtectedRoute({
       ? `${redirectTo}${redirectTo.includes("?") ? "&" : "?"}next=${encodeURIComponent(nextPath)}`
       : redirectTo;
     return <Navigate to={redirectTarget} replace />;
+  }
+
+  if (!isEmailVerified) {
+    const nextPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/verify-email?next=${encodeURIComponent(nextPath)}`} replace />;
   }
 
   if (requireLegalConsent && !hasLegalConsent) {

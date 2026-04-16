@@ -17,6 +17,11 @@ import { closeTrade } from "./tradeClose.js";
 import { syncSignalToTrade } from "./tradeSync.js";
 import { enforceRateLimit, getRequestId, getRequestIp } from "./security/rateLimit.js";
 export { closeTradeFromWebhook } from "./webhooks/closeTradeFromWebhook.js";
+export {
+  clearFailedEmailLogin,
+  getEmailLoginAttemptStatus,
+  recordFailedEmailLogin,
+} from "./authSecurity.js";
 
 initializeApp();
 

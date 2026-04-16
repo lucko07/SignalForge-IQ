@@ -53,12 +53,15 @@ function SignupPage() {
     setIsSubmitting(true);
 
     try {
-      await signUp(email.trim(), password, fullName.trim(), {
+      const result = await signUp(email.trim(), password, fullName.trim(), {
         acceptLegal: true,
         termsVersion: CURRENT_TERMS_VERSION,
       });
       await refreshProfile();
-      navigate("/dashboard");
+      navigate(
+        `/verify-email?next=${encodeURIComponent("/dashboard")}&mode=signup&sent=${result.verificationEmailSent ? "1" : "0"}`,
+        { replace: true }
+      );
     } catch (signupError) {
       setError(getAuthErrorMessage(signupError));
     } finally {

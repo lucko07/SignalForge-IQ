@@ -24,6 +24,7 @@ import UpgradeCancelPage from "./pages/UpgradeCancelPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import LegalConsentPage from "./pages/LegalConsentPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import { hasRequiredFirebaseClientConfig } from "./lib/firebase";
 
 function App() {
@@ -76,6 +77,7 @@ function App() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route
             path="/legal-consent"
             element={

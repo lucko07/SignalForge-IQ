@@ -7,6 +7,7 @@ export type AuthContextValue = {
   profile: UserProfile | null;
   loading: boolean;
   isAuthenticated: boolean;
+  isEmailVerified: boolean;
   isAdmin: boolean;
   hasSubscriptionAccess: boolean;
   hasProAccess: boolean;
@@ -14,6 +15,7 @@ export type AuthContextValue = {
   canAccessAutomation: boolean;
   hasLegalConsent: boolean;
   refreshProfile: () => Promise<void>;
+  refreshAuthState: () => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);

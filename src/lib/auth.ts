@@ -5,13 +5,17 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
+  reload,
 } from "firebase/auth";
 import type { AuthError } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 import {
   getOrCreateUserProfile,
   CURRENT_TERMS_VERSION,
   normalizeEmail,
 } from "./userProfiles";
+import { functions } from "./firebase";
 
 type ProfileBootstrapError = Error & {
   code: string;
@@ -26,6 +30,33 @@ const createProfileBootstrapError = (): ProfileBootstrapError => {
 };
 
 const isDevelopment = import.meta.env.DEV;
+
+const FAILED_LOGIN_LIMIT = 5;
+const FAILED_LOGIN_LOCK_MINUTES = 15;
+
+type LoginAttemptStatusResponse = {
+  failedAttempts: number;
+  isLocked: boolean;
+  lockedUntil: number | null;
+  retryAfterSeconds: number;
+};
+
+type FailedLoginRecordResponse = LoginAttemptStatusResponse;
+
+const getEmailLoginAttemptStatusCallable = httpsCallable<
+  { email: string },
+  LoginAttemptStatusResponse
+>(functions, "getEmailLoginAttemptStatus");
+
+const recordFailedEmailLoginCallable = httpsCallable<
+  { email: string },
+  FailedLoginRecordResponse
+>(functions, "recordFailedEmailLogin");
+
+const clearFailedEmailLoginCallable = httpsCallable<
+  undefined,
+  { cleared: boolean }
+>(functions, "clearFailedEmailLogin");
 
 const logBootstrapFailure = (stage: string, error: unknown, metadata?: Record<string, unknown>) => {
   if (!isDevelopment) {
@@ -54,6 +85,7 @@ export const signUp = async (
 ) => {
   const normalizedEmail = normalizeEmail(email);
   const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+  let verificationEmailSent = false;
 
   try {
     if (fullName) {
@@ -67,8 +99,6 @@ export const signUp = async (
       fullName,
       termsVersion: options?.termsVersion ?? CURRENT_TERMS_VERSION,
     });
-
-    return credential;
   } catch (error) {
     logBootstrapFailure("signup bootstrap failed", error, {
       uid: credential.user.uid,
@@ -80,6 +110,21 @@ export const signUp = async (
     await firebaseSignOut(auth).catch(() => undefined);
     throw createProfileBootstrapError();
   }
+
+  try {
+    await sendEmailVerification(credential.user);
+    verificationEmailSent = true;
+  } catch (error) {
+    logBootstrapFailure("signup verification email failed", error, {
+      uid: credential.user.uid,
+      email: credential.user.email,
+    });
+  }
+
+  return {
+    credential,
+    verificationEmailSent,
+  };
 };
 
 export const signIn = async (email: string, password: string) => {
@@ -95,6 +140,7 @@ export const signIn = async (email: string, password: string) => {
 
   try {
     await credential.user.getIdToken();
+    await reload(credential.user);
   } catch (error) {
     logBootstrapFailure("signin token refresh failed", error, {
       uid: credential.user.uid,
@@ -112,6 +158,71 @@ export const signOut = () => {
 export const resetPassword = (email: string) => {
   return sendPasswordResetEmail(auth, normalizeEmail(email));
 };
+
+export const sendCurrentUserVerificationEmail = async () => {
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("No authenticated user is available.");
+  }
+
+  await sendEmailVerification(user);
+};
+
+export const reloadCurrentUser = async () => {
+  if (!auth.currentUser) {
+    return null;
+  }
+
+  await reload(auth.currentUser);
+  return auth.currentUser;
+};
+
+export const checkEmailLoginAttemptStatus = async (email: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const response = await getEmailLoginAttemptStatusCallable({ email: normalizedEmail });
+  return response.data;
+};
+
+export const recordFailedEmailLogin = async (email: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const response = await recordFailedEmailLoginCallable({ email: normalizedEmail });
+  return response.data;
+};
+
+export const clearFailedEmailLogin = async () => {
+  if (!auth.currentUser) {
+    return { cleared: false };
+  }
+
+  const response = await clearFailedEmailLoginCallable();
+  return response.data;
+};
+
+export const shouldTrackFailedLoginAttempt = (error: unknown) => {
+  const code = (error as AuthError | undefined)?.code;
+
+  return (
+    code === "auth/invalid-credential"
+    || code === "auth/user-not-found"
+    || code === "auth/wrong-password"
+  );
+};
+
+export const formatLoginLockoutMessage = (retryAfterSeconds?: number) => {
+  if (!retryAfterSeconds || retryAfterSeconds <= 0) {
+    return "Too many failed attempts. Try again later or reset your password.";
+  }
+
+  const totalMinutes = Math.ceil(retryAfterSeconds / 60);
+  const minutesLabel = totalMinutes === 1 ? "minute" : "minutes";
+
+  return `Too many failed attempts. Try again in about ${totalMinutes} ${minutesLabel}, or reset your password.`;
+};
+
+export const getFailedLoginPolicySummary = () => (
+  `After ${FAILED_LOGIN_LIMIT} failed attempts, login is locked for ${FAILED_LOGIN_LOCK_MINUTES} minutes.`
+);
 
 export const getAuthErrorMessage = (error: unknown) => {
   const code = (error as AuthError | undefined)?.code;
@@ -135,6 +246,8 @@ export const getAuthErrorMessage = (error: unknown) => {
       return "Network error. Check your connection and try again.";
     case "auth/missing-email":
       return "Enter your email address.";
+    case "verification/send-failed":
+      return "Your account was created, but we could not send the verification email yet. Try resending it from the verification screen.";
     case "permission-denied":
     case "firestore/permission-denied":
     case "profile/bootstrap-failed":
