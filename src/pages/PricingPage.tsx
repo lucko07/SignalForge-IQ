@@ -1,5 +1,7 @@
 import { Fragment } from "react";
+import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
+import TradingDisclaimer from "../components/TradingDisclaimer";
 import { useAuth } from "../context/auth-context";
 import { normalizeManagedPlan } from "../lib/userProfiles";
 
@@ -26,9 +28,9 @@ const plans: PlanDefinition[] = [
     summary:
       "For traders who want clearer decisions, stronger context, and disciplined signal monitoring before taking action.",
     positioning:
-      "Pro gives members qualified setups, confidence framing, analytics, and market context in one clean operating view.",
+      "Pro gives members qualified setups, confidence framing, analytics, and market context across the live BTC product lineup in one clean operating view.",
     bullets: [
-      "Use the live BTC Precision Engine inside a disciplined member workspace",
+      "Use the live BTC Precision Engine and BTC Continuation Engine inside a disciplined member workspace",
       "Use confidence scoring and market context to filter weaker setups",
       "Review analytics and trade history to stay disciplined over time",
       "See BTC Momentum Engine as an upcoming module without relying on it as a live product",
@@ -46,9 +48,9 @@ const plans: PlanDefinition[] = [
     summary:
       "For serious operators who want SignalForge IQ to move from insight into live operational readiness.",
     positioning:
-      "Elite adds the execution layer with delivery controls, automation access, and routing designed for faster, more consistent response.",
+      "Elite adds the execution layer to the live BTC lineup with delivery controls, automation access, and routing designed for faster, more consistent response.",
     bullets: [
-      "Operate with the full Decision Engine plus the execution layer",
+      "Operate with BTC Precision Engine, BTC Continuation Engine, and the full execution layer",
       "Activate automation and signal routing from one account environment",
       "Keep delivery controls ready for real-time execution workflows",
       "Built for members who want disciplined operation at speed",
@@ -65,7 +67,12 @@ const valueBlocks = [
   {
     title: "Not Just Signals",
     body:
-      "SignalForge IQ is designed to turn trade ideas into a repeatable decision process with confidence, context, and post-trade visibility.",
+      "SignalForge IQ is designed to turn trade ideas into a repeatable decision process with confidence, context, and post-trade visibility across focused BTC products.",
+  },
+  {
+    title: "BTC Continuation Added",
+    body:
+      "BTC Continuation Engine expands the live lineup with structured 30-minute Bitcoin continuation setups built for cleaner trend-following participation. Backtested on BTCUSD 30m.",
   },
   {
     title: "Built For Execution",
@@ -82,6 +89,11 @@ const valueBlocks = [
 const comparisonRows = [
   {
     label: "BTC Precision Engine",
+    pro: "Included",
+    elite: "Included",
+  },
+  {
+    label: "BTC Continuation Engine",
     pro: "Included",
     elite: "Included",
   },
@@ -148,6 +160,13 @@ function PricingPage() {
 
   return (
     <section style={pageStyle}>
+      <Helmet>
+        <title>Trading Signals Pricing | SignalForge IQ Plans</title>
+        <meta
+          name="description"
+          content="Compare SignalForge IQ membership plans for trading signals, analytics, and automated delivery features."
+        />
+      </Helmet>
       <div style={heroStyle}>
         <div style={heroHeaderStyle}>
           <span style={eyebrowStyle}>SignalForge IQ Membership</span>
@@ -158,7 +177,7 @@ function PricingPage() {
           <div style={heroCopyStyle}>
             <h1 style={heroTitleStyle}>Signals are the input. SignalForge IQ is the operating system around them.</h1>
             <p style={heroBodyStyle}>
-              Pro gives members live access to BTC Precision Engine with qualified setups, confidence, analytics, and market context.
+              Pro gives members live access to BTC Precision Engine and BTC Continuation Engine with qualified setups, confidence, analytics, and market context.
               Elite adds the execution layer with automation, routing, and delivery controls built for serious operators.
             </p>
             <p style={heroSubBodyStyle}>
@@ -204,7 +223,11 @@ function PricingPage() {
                 detail="Qualified setups are delivered with confidence framing and market context."
               />
               <StatusRow
-                title="Monitoring BTC for qualified precision setups"
+                title="BTC Continuation Engine production candidate"
+                detail="BTC-focused continuation strategy for structured 30-minute setups. Backtested performance is not a guarantee of future results."
+              />
+              <StatusRow
+                title="Monitoring BTC strategies for qualified setups"
                 detail="The system remains active while structure, trend, and confirmation are reviewed."
               />
               <StatusRow
@@ -337,12 +360,16 @@ function PricingPage() {
         </div>
       </div>
 
+      <div style={disclaimerPanelStyle}>
+        <TradingDisclaimer compact />
+      </div>
+
       <div style={footerCtaStyle}>
         <div style={footerCopyStyle}>
           <span style={sectionEyebrowStyle}>Upgrade Path</span>
           <h2 style={footerTitleStyle}>Start with better decisions. Move to faster execution when your workflow is ready.</h2>
           <p style={footerBodyStyle}>
-            Pro is the right choice for clarity before action. Elite is the right choice when delivery, automation, and routing become part of the daily operating loop.
+            Pro is the right choice for clarity before action across the live BTC strategy lineup. Elite is the right choice when delivery, automation, and routing become part of the daily operating loop.
           </p>
         </div>
         <div style={footerActionsStyle}>
@@ -590,19 +617,19 @@ const valueCardStyle = {
   gap: "0.55rem",
   padding: "1.3rem",
   borderRadius: "20px",
-  border: "1px solid #d7dde7",
-  backgroundColor: "#ffffff",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface)",
 };
 
 const valueTitleStyle = {
   margin: 0,
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "1.12rem",
 };
 
 const valueBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
@@ -617,7 +644,7 @@ const sectionHeadingStyle = {
 };
 
 const sectionEyebrowStyle = {
-  color: "#365c8c",
+  color: "var(--color-info-text)",
   fontWeight: 700,
   fontSize: "0.82rem",
   textTransform: "uppercase" as const,
@@ -626,13 +653,13 @@ const sectionEyebrowStyle = {
 
 const sectionTitleStyle = {
   margin: 0,
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "2rem",
 };
 
 const sectionBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.75,
   maxWidth: "72ch",
 };
@@ -648,11 +675,11 @@ const planCardStyle = (featured: boolean) => ({
   gap: "1rem",
   padding: "1.5rem",
   borderRadius: "24px",
-  border: featured ? "1px solid #1f3a5b" : "1px solid #d7dde7",
+  border: featured ? "1px solid var(--color-info-text)" : "1px solid var(--color-border)",
   background: featured
-    ? "linear-gradient(180deg, #eef4fb 0%, #e3edf9 100%)"
-    : "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-  boxShadow: featured ? "0 18px 40px rgba(31, 58, 91, 0.12)" : "none",
+    ? "linear-gradient(180deg, var(--color-surface-muted) 0%, var(--color-surface-alt) 100%)"
+    : "linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-alt) 100%)",
+  boxShadow: featured ? "var(--shadow-soft)" : "none",
   position: "relative" as const,
 });
 
@@ -669,7 +696,7 @@ const planTitleBlockStyle = {
 };
 
 const planLabelStyle = {
-  color: "#365c8c",
+  color: "var(--color-info-text)",
   fontSize: "0.8rem",
   fontWeight: 700,
   letterSpacing: "0.08em",
@@ -678,7 +705,7 @@ const planLabelStyle = {
 
 const planNameStyle = {
   margin: 0,
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "1.9rem",
 };
 
@@ -698,21 +725,21 @@ const priceBlockStyle = {
 };
 
 const priceStyle = {
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "2.4rem",
   lineHeight: 1,
 };
 
 const planSummaryStyle = {
   margin: 0,
-  color: "#162033",
+  color: "var(--color-text-primary)",
   fontWeight: 700,
   lineHeight: 1.6,
 };
 
 const planPositioningStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
@@ -724,12 +751,12 @@ const benefitListStyle = {
 const benefitRowStyle = {
   display: "flex",
   gap: "0.6rem",
-  color: "#344054",
+  color: "var(--color-button-secondary-text)",
   lineHeight: 1.6,
 };
 
 const benefitMarkStyle = {
-  color: "#1f3a5b",
+  color: "var(--color-info-text)",
   fontWeight: 700,
 };
 
@@ -738,12 +765,12 @@ const lockedPreviewStyle = (featured: boolean) => ({
   gap: "0.6rem",
   padding: "1rem",
   borderRadius: "16px",
-  border: featured ? "1px solid #c5d5ea" : "1px solid #d7dde7",
-  backgroundColor: featured ? "rgba(255,255,255,0.72)" : "#ffffff",
+  border: featured ? "1px solid var(--color-border-strong)" : "1px solid var(--color-border)",
+  backgroundColor: featured ? "var(--color-surface-alt)" : "var(--color-surface)",
 });
 
 const lockedPreviewTitleStyle = {
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
 };
 
 const lockedPreviewListStyle = {
@@ -754,7 +781,7 @@ const lockedPreviewListStyle = {
 const lockedPreviewItemStyle = {
   display: "flex",
   gap: "0.6rem",
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.55,
 };
 
@@ -770,9 +797,9 @@ const planCtaStyle = (featured: boolean) => ({
   textAlign: "center" as const,
   padding: "0.95rem 1.2rem",
   borderRadius: "14px",
-  backgroundColor: featured ? "#0f172a" : "#ffffff",
-  color: featured ? "#f8fafc" : "#0f172a",
-  border: featured ? "1px solid #0f172a" : "1px solid #d0d5dd",
+  backgroundColor: featured ? "var(--color-button-primary)" : "var(--color-button-secondary)",
+  color: featured ? "var(--color-button-primary-text)" : "var(--color-button-secondary-text)",
+  border: featured ? "1px solid var(--color-button-primary)" : "1px solid var(--color-border-strong)",
   fontWeight: 700,
 });
 
@@ -780,9 +807,9 @@ const planStatusStyle = (isCurrent: boolean) => ({
   textAlign: "center" as const,
   padding: "0.95rem 1.2rem",
   borderRadius: "14px",
-  backgroundColor: isCurrent ? "#ecfdf3" : "#f2f4f7",
-  color: isCurrent ? "#027a48" : "#344054",
-  border: isCurrent ? "1px solid #abefc6" : "1px solid #d0d5dd",
+  backgroundColor: isCurrent ? "var(--color-success-bg)" : "var(--color-nav-chip)",
+  color: isCurrent ? "var(--color-success-text)" : "var(--color-button-secondary-text)",
+  border: isCurrent ? "1px solid var(--color-border-strong)" : "1px solid var(--color-border-strong)",
   fontWeight: 700,
 });
 
@@ -791,8 +818,8 @@ const comparisonSectionStyle = {
   gap: "1rem",
   padding: "1.4rem",
   borderRadius: "24px",
-  border: "1px solid #d7dde7",
-  backgroundColor: "#ffffff",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface)",
 };
 
 const comparisonTableStyle = {
@@ -805,9 +832,9 @@ const comparisonTableStyle = {
 
 const comparisonHeadCellStyle = {
   padding: "0.95rem 1rem",
-  backgroundColor: "#f8fafc",
-  borderBottom: "1px solid #e4e7ec",
-  color: "#475467",
+  backgroundColor: "var(--color-surface-alt)",
+  borderBottom: "1px solid var(--color-border)",
+  color: "var(--color-text-muted)",
   fontWeight: 700,
 };
 
@@ -819,25 +846,25 @@ const comparisonFeaturedHeadCellStyle = {
 
 const comparisonLabelCellStyle = {
   padding: "0.95rem 1rem",
-  borderBottom: "1px solid #e4e7ec",
-  backgroundColor: "#ffffff",
-  color: "#0f172a",
+  borderBottom: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface)",
+  color: "var(--color-text-primary)",
   fontWeight: 600,
 };
 
 const comparisonCellStyle = (isLocked: boolean) => ({
   padding: "0.95rem 1rem",
-  borderBottom: "1px solid #e4e7ec",
-  backgroundColor: isLocked ? "#fff7ed" : "#ffffff",
-  color: isLocked ? "#9a3412" : "#475467",
+  borderBottom: "1px solid var(--color-border)",
+  backgroundColor: isLocked ? "var(--color-warning-bg)" : "var(--color-surface)",
+  color: isLocked ? "var(--color-warning-text)" : "var(--color-text-muted)",
   fontWeight: isLocked ? 700 : 500,
 });
 
 const comparisonFeaturedCellStyle = {
   padding: "0.95rem 1rem",
-  borderBottom: "1px solid #e4e7ec",
-  backgroundColor: "#f5f8fd",
-  color: "#0f172a",
+  borderBottom: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface-alt)",
+  color: "var(--color-text-primary)",
   fontWeight: 700,
 };
 
@@ -846,8 +873,8 @@ const trustSectionStyle = {
   gap: "1rem",
   padding: "1.5rem",
   borderRadius: "24px",
-  border: "1px solid #d7dde7",
-  background: "linear-gradient(180deg, #f8fafc 0%, #eef3f9 100%)",
+  border: "1px solid var(--color-border)",
+  background: "linear-gradient(180deg, var(--color-surface-alt) 0%, var(--color-surface-muted) 100%)",
 };
 
 const trustGridStyle = {
@@ -861,19 +888,26 @@ const trustCardStyle = {
   gap: "0.45rem",
   padding: "1.15rem",
   borderRadius: "18px",
-  border: "1px solid #d7dde7",
-  backgroundColor: "#ffffff",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface)",
+};
+
+const disclaimerPanelStyle = {
+  padding: "1rem 1.2rem",
+  borderRadius: "20px",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface)",
 };
 
 const trustTitleStyle = {
   margin: 0,
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "1.05rem",
 };
 
 const trustBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
@@ -885,8 +919,8 @@ const footerCtaStyle = {
   flexWrap: "wrap" as const,
   padding: "1.6rem",
   borderRadius: "24px",
-  border: "1px solid #d7dde7",
-  background: "linear-gradient(135deg, #dce7f6 0%, #f7fbff 100%)",
+  border: "1px solid var(--color-border)",
+  background: "linear-gradient(135deg, var(--color-surface-muted) 0%, var(--color-surface) 100%)",
 };
 
 const footerCopyStyle = {
@@ -896,14 +930,14 @@ const footerCopyStyle = {
 
 const footerTitleStyle = {
   margin: 0,
-  color: "#0f172a",
+  color: "var(--color-text-primary)",
   fontSize: "2rem",
   maxWidth: "18ch",
 };
 
 const footerBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
   maxWidth: "60ch",
 };
@@ -918,8 +952,8 @@ const footerPrimaryLinkStyle = {
   textDecoration: "none",
   padding: "0.95rem 1.2rem",
   borderRadius: "14px",
-  backgroundColor: "#0f172a",
-  color: "#f8fafc",
+  backgroundColor: "var(--color-button-primary)",
+  color: "var(--color-button-primary-text)",
   fontWeight: 700,
 };
 
@@ -927,9 +961,9 @@ const footerSecondaryLinkStyle = {
   textDecoration: "none",
   padding: "0.95rem 1.2rem",
   borderRadius: "14px",
-  border: "1px solid #c5ceda",
-  backgroundColor: "#ffffff",
-  color: "#0f172a",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-button-secondary)",
+  color: "var(--color-button-secondary-text)",
   fontWeight: 700,
 };
 

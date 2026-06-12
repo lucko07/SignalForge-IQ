@@ -3,15 +3,20 @@ import { getFirestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { onRequest, type Request } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import { AlpacaApiError, closePositionBySymbol } from "../lib/alpaca.js";
 import {
-  GOOGLE_SHEETS_CLIENT_EMAIL,
-  GOOGLE_SHEETS_PRIVATE_KEY,
-  upsertTradeRow,
-} from "../utils/googleSheets.js";
+  fetchBrokerPositionReconciliation,
+  type BrokerPositionReconciliation,
+} from "../execution/brokerState.js";
 import { TRADES_COLLECTION_NAME } from "../tradeSync.js";
+import { buildClosedTradePatch, type TradeLifecycleResult } from "../tradeLifecycle.js";
 import { enforceRateLimit, getRequestId, getRequestIp } from "../security/rateLimit.js";
 
 const closeTradeWebhookSecret = defineSecret("CLOSE_TRADE_WEBHOOK_SECRET");
+const alpacaApiKeySecret = defineSecret("ALPACA_API_KEY");
+const alpacaSecretKeySecret = defineSecret("ALPACA_SECRET_KEY");
+const googleSheetsClientEmailSecret = defineSecret("GOOGLE_SHEETS_CLIENT_EMAIL");
+const googleSheetsPrivateKeySecret = defineSecret("GOOGLE_SHEETS_PRIVATE_KEY");
 const WEBHOOK_EVENTS_COLLECTION = "webhook_events";
 const EXECUTIONS_COLLECTION = "executions";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -19,7 +24,7 @@ const CLOSE_TRADE_RATE_LIMIT_WINDOW_MS = Number(process.env.CLOSE_TRADE_RATE_LIM
 const CLOSE_TRADE_RATE_LIMIT_MAX = Number(process.env.CLOSE_TRADE_RATE_LIMIT_MAX ?? 180);
 
 type TradeSide = "long" | "short";
-type TradeResult = "open" | "win" | "loss" | "breakeven";
+type TradeResult = TradeLifecycleResult;
 type WebhookOutcome = "win" | "loss";
 type ExitResolutionSource =
   | "explicit-exit-price"
@@ -66,6 +71,7 @@ type ValidatedPayload = {
   closeReason: string;
   source: string;
   eventId: string | null;
+  clientOrderId: string | null;
   stopPrice: number | null;
   targetPrice: number | null;
   tickerId: string | null;
@@ -90,13 +96,13 @@ type ResolvedExit = {
 
 type MatchedTrade = {
   reference: DocumentReference<DocumentData>;
-  matchedBy: "tradeId" | "signalId" | "symbol-side-latest-open";
+  matchedBy: "tradeId" | "signalId" | "clientOrderId" | "symbol-side-latest-open";
   signalId: string | null;
 };
 
 type CloseTradeResult = {
   ok: true;
-  status: "closed" | "already_closed" | "no_open_position" | "duplicate_exit";
+  status: "closed" | "already_closed" | "no_position_to_close" | "duplicate_event";
   tradeId: string;
   signalId: string | null;
   duplicate: boolean;
@@ -249,6 +255,7 @@ const validatePayload = (body: unknown): ValidatedPayload => {
   const closeReason = toTrimmedText(body.closeReason) ?? "";
   const source = toTrimmedText(body.source) ?? "webhook";
   const eventId = toTrimmedText(body.eventId);
+  const clientOrderId = toTrimmedText(body.clientOrderId);
   const exitPrice = toNumber(body.exitPrice);
   const stopPrice = toNumber(body.stopPrice);
   const targetPrice = toNumber(body.targetPrice);
@@ -294,6 +301,7 @@ const validatePayload = (body: unknown): ValidatedPayload => {
     closeReason,
     source,
     eventId,
+    clientOrderId,
     stopPrice,
     targetPrice,
     tickerId,
@@ -386,6 +394,27 @@ const findLatestOpenTradeBySymbolAndSide = async (
   };
 };
 
+const findTradeReferenceByClientOrderId = async (clientOrderId: string): Promise<MatchedTrade | null> => {
+  const db = getFirestore();
+  const trades = db.collection(TRADES_COLLECTION_NAME);
+  const candidateFields = ["executionClientOrderId", "brokerClientOrderId"] as const;
+
+  for (const field of candidateFields) {
+    const snapshot = await trades.where(field, "==", clientOrderId).limit(1).get();
+    if (!snapshot.empty) {
+      const tradeSnapshot = snapshot.docs[0];
+      const trade = tradeSnapshot.data() as TradeDocument;
+      return {
+        reference: tradeSnapshot.ref,
+        matchedBy: "clientOrderId",
+        signalId: toTrimmedText(trade.signalId),
+      };
+    }
+  }
+
+  return null;
+};
+
 const findTradeReference = async (
   payload: ValidatedPayload
 ): Promise<MatchedTrade | null> => {
@@ -431,6 +460,10 @@ const findTradeReference = async (
         signalId: toTrimmedText(trade.signalId) ?? payload.signalId,
       };
     }
+  }
+
+  if (payload.clientOrderId) {
+    return findTradeReferenceByClientOrderId(payload.clientOrderId);
   }
 
   if (payload.symbol && payload.side) {
@@ -653,7 +686,48 @@ const buildTradeSummary = (
   ...overrides,
 });
 
-const buildExitExecutionAuditId = (payload: ValidatedPayload, matchedTrade?: MatchedTrade | null) => {
+const getTradeLifecycleState = (trade: TradeDocument | null): "open" | "closed" | "unknown" => {
+  if (!trade?.result) {
+    return "unknown";
+  }
+
+  return trade.result === "open" ? "open" : "closed";
+};
+
+const isBrokerNoPositionError = (error: unknown) => {
+  if (!(error instanceof AlpacaApiError)) {
+    return false;
+  }
+
+  const message = error.message.trim().toLowerCase();
+  return message.includes("position") && (
+    message.includes("does not exist")
+    || message.includes("no position")
+    || message.includes("not found")
+  );
+};
+
+const upsertNoPositionTradeReconciliation = async ({
+  tradeReference,
+  reconciliation,
+  reason,
+}: {
+  tradeReference: DocumentReference<DocumentData>;
+  reconciliation: BrokerPositionReconciliation;
+  reason: string;
+}) => {
+  await tradeReference.set({
+    brokerStatus: "no_position",
+    brokerReconciliationState: reconciliation.state,
+    brokerPositionConflict: false,
+    executionStatus: "no_position_to_close",
+    executionNoOp: true,
+    executionReason: reason,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+};
+
+const buildExitExecutionAuditId = (payload: ValidatedPayload) => {
   const baseId = toTrimmedText(payload.eventId)
     ?? toTrimmedText(payload.tradeId)
     ?? toTrimmedText(payload.signalId)
@@ -687,16 +761,20 @@ const upsertExitExecutionAudit = async ({
   status,
   reason,
   message,
+  noOp = false,
+  brokerReconciliation = null,
 }: {
   payload: ValidatedPayload;
   matchedTrade?: MatchedTrade | null;
   trade?: TradeDocument | null;
-  status: "closed" | "already_closed" | "no_open_position" | "duplicate_exit";
+  status: "closed" | "already_closed" | "no_position_to_close" | "duplicate_event";
   reason: string;
   message: string;
+  noOp?: boolean;
+  brokerReconciliation?: BrokerPositionReconciliation | null;
 }) => {
   const db = getFirestore();
-  const executionId = buildExitExecutionAuditId(payload, matchedTrade);
+  const executionId = buildExitExecutionAuditId(payload);
   const executionReference = db.collection(EXECUTIONS_COLLECTION).doc(executionId);
   const executionSnapshot = await executionReference.get();
   const tradeId =
@@ -733,6 +811,9 @@ const upsertExitExecutionAudit = async ({
     brokerOrderStatus: null,
     brokerAccountId: null,
     brokerPositionConflict: false,
+    brokerReconciliationState: null,
+    reconciliationReason: null,
+    noOp: false,
     automationSettings: null,
     orderRequest: null,
     orderResponse: null,
@@ -746,6 +827,16 @@ const upsertExitExecutionAudit = async ({
     strategyVersion: null,
     rawStatus: status,
     status,
+    noOp,
+    brokerReconciliationState: brokerReconciliation?.state ?? null,
+    reconciliationReason: brokerReconciliation?.reason ?? null,
+    brokerSnapshot: brokerReconciliation
+      ? {
+        reconciliationState: brokerReconciliation.state,
+        reconciliationReason: brokerReconciliation.reason,
+        brokerPosition: brokerReconciliation.brokerSnapshot,
+      }
+      : null,
     errorCode: reason,
     errorMessage: message,
     validation: {
@@ -797,7 +888,7 @@ const closeTradeTransactional = async (
 
         return {
           ok: true,
-          status: "duplicate_exit",
+          status: "duplicate_event",
           tradeId: eventData.tradeId ?? matchedTrade.reference.id,
           signalId: eventData.signalId ?? matchedTrade.signalId ?? payload.signalId,
           duplicate: true,
@@ -881,18 +972,18 @@ const closeTradeTransactional = async (
     const exitTimeValue = payload.exitTime ?? FieldValue.serverTimestamp();
     const signalId = toTrimmedText(trade.signalId) ?? matchedTrade.signalId ?? payload.signalId;
 
-    transaction.update(matchedTrade.reference, {
-      exitPrice: resolvedExit.exitPrice,
-      exitTime: exitTimeValue,
-      rrActual: metrics.rrActual,
-      pnlPercent: metrics.pnlPercent,
-      pnlDollar: metrics.pnlDollar,
-      closeReason,
+    transaction.update(matchedTrade.reference, buildClosedTradePatch({
       result: resolvedExit.outcome,
-      status: "closed",
-      brokerStatus: "closed",
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+      extra: {
+        exitPrice: resolvedExit.exitPrice,
+        exitTime: exitTimeValue,
+        rrActual: metrics.rrActual,
+        pnlPercent: metrics.pnlPercent,
+        pnlDollar: metrics.pnlDollar,
+        closeReason,
+        brokerStatus: "closed",
+      },
+    }));
 
     if (eventReference) {
       transaction.set(eventReference, {
@@ -950,9 +1041,23 @@ const closeTradeTransactional = async (
 export const closeTradeFromWebhook = onRequest(
   {
     cors: false,
-    secrets: [closeTradeWebhookSecret, GOOGLE_SHEETS_CLIENT_EMAIL, GOOGLE_SHEETS_PRIVATE_KEY],
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+    secrets: [
+      closeTradeWebhookSecret,
+      alpacaApiKeySecret,
+      alpacaSecretKeySecret,
+      googleSheetsClientEmailSecret,
+      googleSheetsPrivateKeySecret,
+    ],
   },
   async (request, response) => {
+    if (request.method !== "POST") {
+      response.status(405).send("Method Not Allowed");
+      return;
+    }
+
     const requestId = getRequestId(request);
     const clientIp = getRequestIp(request);
     logger.info("Close trade webhook request received.", {
@@ -960,11 +1065,6 @@ export const closeTradeFromWebhook = onRequest(
       method: request.method,
       ip: clientIp,
     });
-
-    if (request.method !== "POST") {
-      response.status(405).json({ ok: false, error: "Method not allowed. Use POST." });
-      return;
-    }
 
     const rateLimit = await enforceRateLimit({
       route: "functions/closeTradeFromWebhook",
@@ -1029,20 +1129,24 @@ export const closeTradeFromWebhook = onRequest(
         eventId: payload.eventId,
       });
 
-      const matchedTrade = await findTradeReference(payload);
+      const db = getFirestore();
+      const existingEventSnapshot = payload.eventId
+        ? await db.collection(WEBHOOK_EVENTS_COLLECTION).doc(payload.eventId).get()
+        : null;
 
-      if (!matchedTrade) {
+      if (existingEventSnapshot?.exists) {
+        const eventData = existingEventSnapshot.data() ?? {};
         const result: CloseTradeResult = {
           ok: true,
-          status: "no_open_position",
-          tradeId: payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
-          signalId: payload.signalId,
-          duplicate: false,
+          status: "duplicate_event",
+          tradeId: toTrimmedText(eventData.tradeId) ?? payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
+          signalId: toTrimmedText(eventData.signalId) ?? payload.signalId,
+          duplicate: true,
           alreadyClosed: false,
-          result: null,
-          exitPrice: payload.exitPrice,
-          closeReason: payload.closeReason || "No open trade or broker position matched this exit event.",
-          matchedBy: null,
+          result: (toTrimmedText(eventData.result) as TradeResult | WebhookOutcome | null) ?? null,
+          exitPrice: toNumber(eventData.exitPrice) ?? payload.exitPrice,
+          closeReason: toTrimmedText(eventData.closeReason) ?? "Duplicate exit event ignored.",
+          matchedBy: (toTrimmedText(eventData.matchedBy) as MatchedTrade["matchedBy"] | null) ?? null,
           resolutionSource: null,
           trade: {
             symbol: payload.symbol,
@@ -1059,29 +1163,94 @@ export const closeTradeFromWebhook = onRequest(
           },
         };
 
-        logger.info("Close trade webhook handled with no matching open trade.", {
-          requestId,
-          tradeId: payload.tradeId,
-          signalId: payload.signalId,
-          symbol: payload.symbol,
-          side: payload.side,
-          source: payload.source,
-          eventId: payload.eventId,
-          status: result.status,
+        await upsertExitExecutionAudit({
+          payload,
+          status: "duplicate_event",
+          reason: "duplicate-event",
+          message: result.closeReason,
+          noOp: true,
         });
 
+        response.status(200).json(result);
+        return;
+      }
+
+      const matchedTrade = await findTradeReference(payload);
+      const matchedTradeSnapshot = matchedTrade ? await matchedTrade.reference.get() : null;
+      const trade = matchedTradeSnapshot?.exists ? matchedTradeSnapshot.data() as TradeDocument : null;
+      const brokerSymbol = payload.symbol ?? normalizeSymbol(trade?.symbol) ?? "BTCUSD";
+      const brokerSide = payload.side ?? normalizeSide(trade?.side);
+      const brokerReconciliation = await fetchBrokerPositionReconciliation({
+        symbol: brokerSymbol,
+        desiredSide: brokerSide,
+        firestoreTradeState: getTradeLifecycleState(trade),
+      });
+
+      logger.info("Broker position snapshot before exit submit.", {
+        requestId,
+        eventId: payload.eventId,
+        tradeId: matchedTrade?.reference.id ?? payload.tradeId ?? null,
+        signalId: matchedTrade?.signalId ?? payload.signalId,
+        symbol: brokerSymbol,
+        side: brokerSide,
+        reconciliationState: brokerReconciliation.state,
+        reconciliationReason: brokerReconciliation.reason,
+        brokerPosition: brokerReconciliation.brokerSnapshot,
+      });
+
+      if (!brokerReconciliation.brokerPosition) {
+        const alreadyClosed = trade?.result != null && trade.result !== "open";
+        const result: CloseTradeResult = {
+          ok: true,
+          status: alreadyClosed ? "already_closed" : "no_position_to_close",
+          tradeId: matchedTrade?.reference.id ?? payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
+          signalId: matchedTrade?.signalId ?? payload.signalId ?? null,
+          duplicate: false,
+          alreadyClosed,
+          result: alreadyClosed ? trade?.result ?? null : null,
+          exitPrice: payload.exitPrice,
+          closeReason: alreadyClosed
+            ? (trade?.closeReason ?? "Trade already closed and broker has no open position.")
+            : "No open broker position to close.",
+          matchedBy: matchedTrade?.matchedBy ?? null,
+          resolutionSource: null,
+          trade: trade
+            ? buildTradeSummary(trade)
+            : {
+              symbol: payload.symbol,
+              side: payload.side,
+              entryPrice: null,
+              stopPrice: payload.stopPrice,
+              targetPrice: payload.targetPrice,
+              rrPlanned: null,
+              rrActual: null,
+              pnlPercent: null,
+              pnlDollar: null,
+              createdAt: null,
+              exitTime: payload.exitTime ? payload.exitTime.toDate().toISOString() : null,
+            },
+        };
+
+        if (matchedTrade && trade && trade.result === "open") {
+          await upsertNoPositionTradeReconciliation({
+            tradeReference: matchedTrade.reference,
+            reconciliation: brokerReconciliation,
+            reason: "no-position-to-close",
+          });
+        }
+
         if (payload.eventId) {
-          await getFirestore().collection(WEBHOOK_EVENTS_COLLECTION).doc(payload.eventId).set({
+          await db.collection(WEBHOOK_EVENTS_COLLECTION).doc(payload.eventId).set({
             tradeId: result.tradeId,
             signalId: result.signalId,
             source: payload.source,
-            matchedBy: null,
-            result: null,
+            matchedBy: result.matchedBy,
+            result: result.result,
             exitPrice: result.exitPrice,
             closeReason: result.closeReason,
             resolutionSource: null,
             status: result.status,
-            alreadyClosed: false,
+            alreadyClosed: result.alreadyClosed,
             noOpenPosition: true,
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
@@ -1090,9 +1259,87 @@ export const closeTradeFromWebhook = onRequest(
 
         await upsertExitExecutionAudit({
           payload,
-          status: "no_open_position",
-          reason: "no-open-position",
+          matchedTrade,
+          trade,
+          status: result.status,
+          reason: result.status === "already_closed" ? "already-closed" : "no-position-to-close",
           message: result.closeReason,
+          noOp: true,
+          brokerReconciliation,
+        });
+
+        logger.info("Exit treated as no-op because broker is already flat.", {
+          requestId,
+          eventId: payload.eventId,
+          status: result.status,
+          tradeId: result.tradeId,
+        });
+
+        response.status(200).json(result);
+        return;
+      }
+
+      const closeOrder = await closePositionBySymbol(brokerSymbol);
+
+      logger.info("Broker close submitted for exit webhook.", {
+        requestId,
+        eventId: payload.eventId,
+        symbol: brokerSymbol,
+        orderId: closeOrder?.id ?? null,
+        orderStatus: closeOrder?.status ?? null,
+      });
+
+      if (!matchedTrade) {
+        const result: CloseTradeResult = {
+          ok: true,
+          status: "closed",
+          tradeId: payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
+          signalId: payload.signalId,
+          duplicate: false,
+          alreadyClosed: false,
+          result: payload.outcome,
+          exitPrice: payload.exitPrice,
+          closeReason: "Closed broker position without a matching open trade document.",
+          matchedBy: null,
+          resolutionSource: null,
+          trade: {
+            symbol: payload.symbol ?? brokerSymbol,
+            side: payload.side ?? brokerSide,
+            entryPrice: null,
+            stopPrice: payload.stopPrice,
+            targetPrice: payload.targetPrice,
+            rrPlanned: null,
+            rrActual: null,
+            pnlPercent: null,
+            pnlDollar: null,
+            createdAt: null,
+            exitTime: payload.exitTime ? payload.exitTime.toDate().toISOString() : null,
+          },
+        };
+
+        if (payload.eventId) {
+          await db.collection(WEBHOOK_EVENTS_COLLECTION).doc(payload.eventId).set({
+            tradeId: result.tradeId,
+            signalId: result.signalId,
+            source: payload.source,
+            matchedBy: null,
+            result: result.result,
+            exitPrice: result.exitPrice,
+            closeReason: result.closeReason,
+            resolutionSource: null,
+            status: result.status,
+            alreadyClosed: false,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+
+        await upsertExitExecutionAudit({
+          payload,
+          status: "closed",
+          reason: "broker-position-closed-no-trade",
+          message: result.closeReason,
+          brokerReconciliation,
         });
 
         response.status(200).json(result);
@@ -1112,14 +1359,16 @@ export const closeTradeFromWebhook = onRequest(
         await upsertExitExecutionAudit({
           payload,
           matchedTrade,
-          status: "no_open_position",
+          status: "no_position_to_close",
           reason: "trade-disappeared-before-close",
           message: "Trade no longer has an open position to close.",
+          noOp: true,
+          brokerReconciliation,
         });
 
         response.status(200).json({
           ok: true,
-          status: "no_open_position",
+          status: "no_position_to_close",
           tradeId: matchedTrade.reference.id,
           signalId: matchedTrade.signalId ?? payload.signalId,
           duplicate: false,
@@ -1146,9 +1395,6 @@ export const closeTradeFromWebhook = onRequest(
         return;
       }
 
-      const tradeSnapshot = await matchedTrade.reference.get();
-      const trade = tradeSnapshot.exists ? tradeSnapshot.data() as TradeDocument : null;
-
       await upsertExitExecutionAudit({
         payload,
         matchedTrade,
@@ -1159,11 +1405,14 @@ export const closeTradeFromWebhook = onRequest(
             ? "exit-processed"
             : result.status === "already_closed"
               ? "already-closed"
-              : "duplicate-exit",
+              : "duplicate-event",
         message: result.closeReason,
+        noOp: result.status !== "closed",
+        brokerReconciliation,
       });
 
       try {
+        const { upsertTradeRow } = await import("../utils/googleSheets.js");
         await upsertTradeRow(
           "1BluPeuDCOlEvMq8BxWj6-V3O_yb97wO10YcPLeWcxpE",
           "trades",
@@ -1211,6 +1460,55 @@ export const closeTradeFromWebhook = onRequest(
       const message = error instanceof Error ? error.message : "Internal error.";
       const errorName = error instanceof Error ? error.name : "UnknownError";
 
+      if (isBrokerNoPositionError(error)) {
+        logger.info("Close trade webhook treated broker no-position close as idempotent no-op.", {
+          requestId,
+          tradeId: payload.tradeId,
+          signalId: payload.signalId,
+          symbol: payload.symbol,
+          side: payload.side,
+          source: payload.source,
+          eventId: payload.eventId,
+          error: message,
+        });
+
+        await upsertExitExecutionAudit({
+          payload,
+          status: "no_position_to_close",
+          reason: "no-position-to-close",
+          message: "No open broker position to close.",
+          noOp: true,
+        });
+
+        response.status(200).json({
+          ok: true,
+          status: "no_position_to_close",
+          tradeId: payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
+          signalId: payload.signalId,
+          duplicate: false,
+          alreadyClosed: false,
+          result: null,
+          exitPrice: payload.exitPrice,
+          closeReason: "No open broker position to close.",
+          matchedBy: null,
+          resolutionSource: null,
+          trade: {
+            symbol: payload.symbol,
+            side: payload.side,
+            entryPrice: null,
+            stopPrice: payload.stopPrice,
+            targetPrice: payload.targetPrice,
+            rrPlanned: null,
+            rrActual: null,
+            pnlPercent: null,
+            pnlDollar: null,
+            createdAt: null,
+            exitTime: payload.exitTime ? payload.exitTime.toDate().toISOString() : null,
+          },
+        } satisfies CloseTradeResult);
+        return;
+      }
+
       if (errorName === "SymbolMismatch" || errorName === "SideMismatch") {
         logger.info("Close trade webhook handled trade mismatch as no-open-position.", {
           requestId,
@@ -1223,14 +1521,15 @@ export const closeTradeFromWebhook = onRequest(
 
         await upsertExitExecutionAudit({
           payload,
-          status: "no_open_position",
+          status: "no_position_to_close",
           reason: "trade-mismatch",
           message: "Provided trade details do not match an open trade.",
+          noOp: true,
         });
 
         response.status(200).json({
           ok: true,
-          status: "no_open_position",
+          status: "no_position_to_close",
           tradeId: payload.tradeId ?? payload.signalId ?? `${payload.symbol ?? "UNKNOWN"}_${payload.side ?? "unknown"}_exit`,
           signalId: payload.signalId,
           duplicate: false,

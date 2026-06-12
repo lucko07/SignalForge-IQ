@@ -1,3 +1,61 @@
+:root {
+  --color-bg: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafc;
+  --color-surface-muted: #eef3f9;
+  --color-text-primary: #101828;
+  --color-text-muted: #475467;
+  --color-text-subtle: #667085;
+  --color-border: #d6d9e0;
+  --color-border-strong: #d0d5dd;
+  --color-nav-chip: #f2f4f7;
+  --color-nav-chip-active: #101828;
+  --color-nav-chip-active-text: #ffffff;
+  --color-button-primary: #101828;
+  --color-button-primary-text: #ffffff;
+  --color-button-secondary: #ffffff;
+  --color-button-secondary-text: #344054;
+  --color-success-bg: #ecfdf3;
+  --color-success-text: #027a48;
+  --color-info-bg: #eff8ff;
+  --color-info-text: #175cd3;
+  --color-warning-bg: #fff7ed;
+  --color-warning-text: #9a3412;
+  --color-danger-bg: #fef3f2;
+  --color-danger-text: #b42318;
+  --color-hero-border: #d7dde7;
+  --shadow-soft: 0 10px 30px rgba(16, 24, 40, 0.05);
+}
+
+[data-theme="dark"] {
+  --color-bg: #07111f;
+  --color-surface: #0f172a;
+  --color-surface-alt: #111b2e;
+  --color-surface-muted: #162236;
+  --color-text-primary: #f8fafc;
+  --color-text-muted: #c7d2df;
+  --color-text-subtle: #9fb1c3;
+  --color-border: #22344c;
+  --color-border-strong: #2b415e;
+  --color-nav-chip: #172334;
+  --color-nav-chip-active: #ebf2fb;
+  --color-nav-chip-active-text: #0f172a;
+  --color-button-primary: #ebf2fb;
+  --color-button-primary-text: #0f172a;
+  --color-button-secondary: #132237;
+  --color-button-secondary-text: #e5eef8;
+  --color-success-bg: rgba(6, 118, 71, 0.22);
+  --color-success-text: #8af0bf;
+  --color-info-bg: rgba(23, 92, 211, 0.2);
+  --color-info-text: #a9c9ff;
+  --color-warning-bg: rgba(154, 52, 18, 0.24);
+  --color-warning-text: #fdc589;
+  --color-danger-bg: rgba(180, 35, 24, 0.22);
+  --color-danger-text: #ffb4ab;
+  --color-hero-border: #29415d;
+  --shadow-soft: 0 18px 44px rgba(2, 6, 23, 0.35);
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -10,8 +68,9 @@ html, body, #root {
 }
 
 body {
-  background: #ffffff;
-  color: #111;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 main {
@@ -21,10 +80,28 @@ main {
 
 h1 {
   margin-top: 0;
-  color: #101828;
+  color: var(--color-text-primary);
 }
 
 p {
   line-height: 1.6;
-  color: #475467;
+  color: var(--color-text-muted);
+}
+
+a,
+button,
+select,
+input,
+textarea {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+select,
+input,
+textarea {
+  color-scheme: inherit;
 }

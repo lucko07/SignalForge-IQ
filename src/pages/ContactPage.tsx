@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
+import { Helmet } from "react-helmet-async";
 
 const initialFormState = {
   name: "",
@@ -94,6 +95,13 @@ function ContactPage() {
 
   return (
     <section style={pageStyle}>
+      <Helmet>
+        <title>Contact SignalForge IQ | Get in Touch</title>
+        <meta
+          name="description"
+          content="Contact SignalForge IQ for support, questions about trading signals, subscriptions, or platform features."
+        />
+      </Helmet>
       <div style={heroStyle}>
         <p style={eyebrowStyle}>Support</p>
         <h1 style={heroTitleStyle}>Contact SignalForge IQ</h1>
@@ -278,7 +286,7 @@ const heroStyle = {
   gap: "0.85rem",
   padding: "2rem",
   borderRadius: "24px",
-  border: "1px solid #d0d5dd",
+  border: "1px solid var(--color-hero-border)",
   background:
     "linear-gradient(135deg, rgba(16,24,40,1) 0%, rgba(29,41,57,1) 58%, rgba(71,84,103,1) 100%)",
   color: "#ffffff",
@@ -329,8 +337,8 @@ const infoCardStyle = {
   gap: "0.75rem",
   padding: "1.5rem",
   borderRadius: "20px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
 };
 
 const detailCardStyle = {
@@ -338,8 +346,8 @@ const detailCardStyle = {
   gap: "0.5rem",
   padding: "1.5rem",
   borderRadius: "20px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#f8fafc",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 const formCardStyle = {
@@ -347,9 +355,9 @@ const formCardStyle = {
   gap: "1.25rem",
   padding: "1.5rem",
   borderRadius: "24px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-  boxShadow: "0 8px 24px rgba(16, 24, 40, 0.06)",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
+  boxShadow: "var(--shadow-soft)",
 };
 
 const formHeaderStyle = {
@@ -359,7 +367,7 @@ const formHeaderStyle = {
 
 const sectionLabelStyle = {
   margin: 0,
-  color: "#667085",
+  color: "var(--color-text-subtle)",
   fontWeight: 700,
   letterSpacing: "0.08em",
   textTransform: "uppercase" as const,
@@ -368,24 +376,24 @@ const sectionLabelStyle = {
 
 const cardTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.35rem",
 };
 
 const formTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.75rem",
 };
 
 const cardDescriptionStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
 const emailLinkStyle = {
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontWeight: 700,
   textDecoration: "none",
   fontSize: "1rem",
@@ -393,19 +401,19 @@ const emailLinkStyle = {
 
 const detailTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.15rem",
 };
 
 const detailBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
 const detailMutedStyle = {
   margin: 0,
-  color: "#667085",
+  color: "var(--color-text-subtle)",
   lineHeight: 1.6,
   fontSize: "0.95rem",
 };
@@ -427,7 +435,7 @@ const fieldStyle = {
 };
 
 const fieldLabelStyle = {
-  color: "#344054",
+  color: "var(--color-button-secondary-text)",
   fontWeight: 700,
   fontSize: "0.92rem",
 };
@@ -436,9 +444,9 @@ const inputStyle = {
   width: "100%",
   padding: "0.95rem 1rem",
   borderRadius: "14px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-  color: "#101828",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
+  color: "var(--color-text-primary)",
   fontSize: "0.98rem",
   outline: "none",
   boxSizing: "border-box" as const,
@@ -458,7 +466,7 @@ const formFooterStyle = {
 
 const formNoteStyle = {
   margin: 0,
-  color: "#667085",
+  color: "var(--color-text-subtle)",
   lineHeight: 1.6,
   fontSize: "0.95rem",
 };
@@ -467,8 +475,8 @@ const successMessageStyle = {
   margin: 0,
   padding: "0.9rem 1rem",
   borderRadius: "14px",
-  backgroundColor: "#ecfdf3",
-  color: "#027a48",
+  backgroundColor: "var(--color-success-bg)",
+  color: "var(--color-success-text)",
   fontWeight: 700,
   lineHeight: 1.6,
 };
@@ -477,8 +485,8 @@ const errorMessageStyle = {
   margin: 0,
   padding: "0.9rem 1rem",
   borderRadius: "14px",
-  backgroundColor: "#fef3f2",
-  color: "#b42318",
+  backgroundColor: "var(--color-danger-bg)",
+  color: "var(--color-danger-text)",
   fontWeight: 700,
   lineHeight: 1.6,
 };
@@ -495,9 +503,9 @@ const buttonStyle = (isDisabled: boolean) => ({
   justifySelf: "start",
   padding: "0.95rem 1.35rem",
   borderRadius: "999px",
-  border: "1px solid #101828",
-  backgroundColor: "#101828",
-  color: "#ffffff",
+  border: "1px solid var(--color-button-primary)",
+  backgroundColor: "var(--color-button-primary)",
+  color: "var(--color-button-primary-text)",
   fontWeight: 700,
   cursor: isDisabled ? "not-allowed" : "pointer",
   opacity: isDisabled ? 0.7 : 1,

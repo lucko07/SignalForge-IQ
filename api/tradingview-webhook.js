@@ -31,6 +31,15 @@ const MOMENTUM_PRODUCT_CONFIG = Object.freeze({
   strategyVersion: "beta",
   uiLabel: "BTC Momentum",
 });
+const ETH_CONTINUATION_PRODUCT_CONFIG = Object.freeze({
+  product: "ETH Continuation Engine",
+  productCode: "eth_continuation_engine_v1",
+  engine: "continuation",
+  engineCode: "continuation_engine",
+  strategyVersion: "v1",
+  marketState: "eth_continuation_setup",
+  confidence: "qualified",
+});
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -94,6 +103,8 @@ export default async function handler(req, res) {
       requestId,
       reason: "invalid json",
       bodyType: typeof req.body,
+      payloadShape: describePayloadShape(req.body),
+      eventId: extractEventId(req.body),
     });
     return res.status(400).json({
       ok: false,
@@ -115,13 +126,33 @@ export default async function handler(req, res) {
       side: normalizedEvent.side,
     });
   } catch (error) {
+    const validationDetails = buildValidationFailureDetails(payload, error);
+    const maybeEvent = normalizeIncomingEventHint(payload?.event);
     logWarn("validation failure", {
       requestId,
-      reason: getErrorMessage(error),
+      ...validationDetails.log,
+      payloadShape: describePayloadShape(payload),
     });
+    if (maybeEvent === "entry" || maybeEvent === "exit") {
+      return res.status(200).json({
+        ok: true,
+        noOp: true,
+        status: "invalid-payload-noop",
+        event: maybeEvent,
+        duplicate: false,
+        eventId: extractEventId(payload),
+        reason: validationDetails.error,
+        field: validationDetails.field,
+        detectedProduct: validationDetails.detectedProduct,
+        detectedStrategy: validationDetails.detectedStrategy,
+      });
+    }
     return res.status(400).json({
       ok: false,
-      error: getErrorMessage(error),
+      error: validationDetails.error,
+      field: validationDetails.field,
+      detectedProduct: validationDetails.detectedProduct,
+      detectedStrategy: validationDetails.detectedStrategy,
     });
   }
 
@@ -293,6 +324,33 @@ async function routeExitEvent(normalizedEvent, relayEventReference) {
     matchedBy: matchingTrade?.matchedBy ?? null,
   });
 
+  if (!matchingTrade && normalizedEvent.productCode === ETH_CONTINUATION_PRODUCT_CONFIG.productCode) {
+    await relayEventReference.set(buildRelayEventDocument({
+      normalizedEvent,
+      status: "exit-no-open-trade",
+      signalId: normalizedEvent.signalId ?? null,
+      tradeId: normalizedEvent.tradeId ?? null,
+      metadata: {
+        matchedBy: null,
+        relayClassification: "exit-no-open-trade",
+        reason: "No open ETH Continuation trade matched symbol and side.",
+      },
+    }));
+
+    return {
+      status: "exit-no-open-trade",
+      tradeId: normalizedEvent.tradeId ?? null,
+      signalId: normalizedEvent.signalId ?? null,
+      duplicate: false,
+      backend: {
+        ok: true,
+        status: "exit-no-open-trade",
+        result: "noop",
+        matchedBy: null,
+      },
+    };
+  }
+
   const backendPayload = {
     event: "exit",
     eventType: normalizedEvent.eventType,
@@ -300,6 +358,7 @@ async function routeExitEvent(normalizedEvent, relayEventReference) {
     eventId: normalizedEvent.eventId,
     signalId: normalizedEvent.signalId ?? matchingTrade?.signalId ?? null,
     tradeId: normalizedEvent.tradeId ?? matchingTrade?.tradeId ?? null,
+    clientOrderId: normalizedEvent.clientOrderId ?? null,
     automationTag: normalizedEvent.automationTag,
     product: normalizedEvent.product,
     productCode: normalizedEvent.productCode,
@@ -322,7 +381,49 @@ async function routeExitEvent(normalizedEvent, relayEventReference) {
     ...(normalizedEvent.exitPrice !== undefined ? { exitPrice: normalizedEvent.exitPrice } : {}),
   };
 
-  const backend = await callFirebaseCloseTradeWebhook(backendPayload);
+  let backend = null;
+  try {
+    backend = await callFirebaseCloseTradeWebhook(backendPayload);
+  } catch (error) {
+    const backendStatus = isRelayHttpError(error) ? error.statusCode : 500;
+    const backendMessage = getErrorMessage(error);
+    const status = backendStatus >= 500 ? "exit-forwarding-noop" : "exit-invalid-noop";
+
+    logWarn("exit forwarding treated as no-op", {
+      eventId: normalizedEvent.eventId,
+      symbol: normalizedEvent.symbol,
+      side: normalizedEvent.side,
+      backendStatus,
+      backendMessage,
+      payloadShape: describePayloadShape(backendPayload),
+    });
+
+    await relayEventReference.set(buildRelayEventDocument({
+      normalizedEvent,
+      status,
+      signalId: matchingTrade?.signalId ?? normalizedEvent.signalId ?? null,
+      tradeId: matchingTrade?.tradeId ?? normalizedEvent.tradeId ?? null,
+      metadata: {
+        matchedBy: matchingTrade?.matchedBy ?? null,
+        relayClassification: status,
+        backendStatus,
+        backendMessage,
+      },
+    }));
+
+    return {
+      status,
+      tradeId: matchingTrade?.tradeId ?? normalizedEvent.tradeId ?? null,
+      signalId: matchingTrade?.signalId ?? normalizedEvent.signalId ?? null,
+      duplicate: false,
+      backend: {
+        ok: true,
+        status,
+        result: "noop",
+        reason: backendMessage,
+      },
+    };
+  }
 
   await relayEventReference.set(buildRelayEventDocument({
     normalizedEvent,
@@ -412,6 +513,10 @@ async function findLatestOpenTrade({ symbol, side }) {
 }
 
 function validateAndNormalizeTradingViewPayload(payload) {
+  if (isEthContinuationPayload(payload)) {
+    return normalizeEthContinuationPayload(payload);
+  }
+
   const allowedKeys = new Set([
     "event",
     "eventType",
@@ -437,6 +542,7 @@ function validateAndNormalizeTradingViewPayload(payload) {
     "eventId",
     "signalId",
     "tradeId",
+    "clientOrderId",
     "marketState",
     "confidence",
     "source",
@@ -462,6 +568,7 @@ function validateAndNormalizeTradingViewPayload(payload) {
   const eventId = requireNonEmptyString(payload.eventId, "eventId");
   const signalId = optionalNonEmptyString(payload.signalId);
   const tradeId = optionalNonEmptyString(payload.tradeId);
+  const clientOrderId = optionalNonEmptyString(payload.clientOrderId);
   const source = optionalNonEmptyString(payload.source) ?? DEFAULT_EVENT_SOURCE;
   const confidence = normalizeConfidence(payload.confidence);
   const marketState = optionalNonEmptyString(payload.marketState) ?? DEFAULT_MARKET_STATE;
@@ -494,6 +601,7 @@ function validateAndNormalizeTradingViewPayload(payload) {
       targetPrice,
       rrPlanned: normalizeRrPlanned(payload.rrPlanned, payload.rrTarget),
       eventId,
+      clientOrderId,
     };
   }
 
@@ -523,6 +631,7 @@ function validateAndNormalizeTradingViewPayload(payload) {
     marketState,
     signalId,
     tradeId,
+    clientOrderId,
     stopPrice,
     targetPrice,
     eventId,
@@ -530,10 +639,107 @@ function validateAndNormalizeTradingViewPayload(payload) {
   };
 }
 
+function normalizeEthContinuationPayload(payload) {
+  const event = normalizeEvent(payload.event);
+  const strategyName = optionalNonEmptyString(payload.strategy)
+    ?? optionalNonEmptyString(payload.strategyName)
+    ?? optionalNonEmptyString(payload.strategyTag)
+    ?? ETH_CONTINUATION_PRODUCT_CONFIG.product;
+  const eventId = requireNonEmptyString(payload.eventId, "eventId");
+  const tickerSymbol = normalizeTickerSymbol(payload.ticker ?? payload.symbol);
+  const tickerId = optionalNonEmptyString(payload.symbol) ?? optionalNonEmptyString(payload.ticker);
+  const timeframe = requireNonEmptyString(String(payload.timeframe ?? ""), "timeframe");
+  const side = normalizeSide(payload.side);
+  const barTime = normalizeEthBarTime(payload.barTime, payload.timestamp, eventId);
+  const source = optionalNonEmptyString(payload.source) ?? DEFAULT_EVENT_SOURCE;
+  const strategyVersion = optionalNonEmptyString(payload.webhookVersion)
+    ?? optionalNonEmptyString(payload.strategyVersion)
+    ?? ETH_CONTINUATION_PRODUCT_CONFIG.strategyVersion;
+
+  if (!tickerSymbol) {
+    throw createValidationError("symbol", "symbol or ticker is required and must normalize to a symbol.");
+  }
+
+  if (!tickerId) {
+    throw createValidationError("symbol", "symbol or ticker is required and must be a non-empty string.");
+  }
+
+  if (!side) {
+    throw createValidationError("side", 'side must be exactly "long" or "short".');
+  }
+
+  const stopPrice = optionalPositiveNumber(payload.stopPrice, "stopPrice");
+  const targetPrice = optionalPositiveNumber(payload.targetPrice, "targetPrice");
+  const entryPrice = optionalPositiveNumber(payload.entryPrice, "entryPrice");
+  const rrPlanned = normalizeEthRrPlanned(payload, { entryPrice, stopPrice, targetPrice });
+  const eventType = normalizeEventType(payload.eventType, event);
+
+  const normalizedEvent = {
+    event,
+    eventType,
+    product: ETH_CONTINUATION_PRODUCT_CONFIG.product,
+    productCode: ETH_CONTINUATION_PRODUCT_CONFIG.productCode,
+    engine: ETH_CONTINUATION_PRODUCT_CONFIG.engine,
+    engineCode: ETH_CONTINUATION_PRODUCT_CONFIG.engineCode,
+    strategyName,
+    strategyVersion,
+    automationTag: optionalNonEmptyString(payload.strategyTag) ?? strategyName,
+    symbol: tickerSymbol,
+    tickerId,
+    timeframe,
+    barTime,
+    side,
+    direction: side.toUpperCase(),
+    assetType: "crypto",
+    source,
+    confidence: ETH_CONTINUATION_PRODUCT_CONFIG.confidence,
+    marketState: ETH_CONTINUATION_PRODUCT_CONFIG.marketState,
+    signalId: eventId,
+    tradeId: eventId,
+    eventId,
+    clientOrderId: optionalNonEmptyString(payload.clientOrderId),
+    thesis: `ETH Continuation ${side} setup qualified on ${timeframe} minute structure.`,
+    rrPlanned,
+    rrTarget: rrPlanned,
+  };
+
+  if (event === "entry") {
+    if (entryPrice === undefined) {
+      throw createValidationError("entryPrice", "entryPrice is required and must be a finite number greater than 0.");
+    }
+
+    if (stopPrice === undefined) {
+      throw createValidationError("stopPrice", "stopPrice is required and must be a finite number greater than 0.");
+    }
+
+    if (targetPrice === undefined) {
+      throw createValidationError("targetPrice", "targetPrice is required and must be a finite number greater than 0.");
+    }
+
+    return {
+      ...normalizedEvent,
+      entryPrice,
+      stopPrice,
+      targetPrice,
+      entry: toPriceText(entryPrice),
+      stopLoss: toPriceText(stopPrice),
+      target: toPriceText(targetPrice),
+    };
+  }
+
+  return {
+    ...normalizedEvent,
+    ...(entryPrice !== undefined ? { entryPrice, entry: toPriceText(entryPrice) } : {}),
+    ...(stopPrice !== undefined ? { stopPrice, stopLoss: toPriceText(stopPrice) } : {}),
+    ...(targetPrice !== undefined ? { targetPrice, target: toPriceText(targetPrice) } : {}),
+    ...(payload.exitPrice !== undefined ? { exitPrice: requirePositiveNumber(payload.exitPrice, "exitPrice") } : {}),
+  };
+}
+
 function buildSignalDocument(normalizedEvent, { signalId, tradeId }) {
   const signalTimestamp = new Date(normalizedEvent.barTime).toISOString();
-  const direction = normalizedEvent.side.toUpperCase();
-  const assetType = inferAssetType(normalizedEvent.tickerId, normalizedEvent.symbol);
+  const direction = normalizedEvent.direction ?? normalizedEvent.side.toUpperCase();
+  const assetType = normalizedEvent.assetType ?? inferAssetType(normalizedEvent.tickerId, normalizedEvent.symbol);
 
   return {
     signalId,
@@ -546,13 +752,14 @@ function buildSignalDocument(normalizedEvent, { signalId, tradeId }) {
     assetType,
     direction,
     side: normalizedEvent.side,
-    entry: toPriceText(normalizedEvent.entryPrice),
+    entry: normalizedEvent.entry ?? toPriceText(normalizedEvent.entryPrice),
     entryPrice: normalizedEvent.entryPrice,
-    stopLoss: toPriceText(normalizedEvent.stopPrice),
+    stopLoss: normalizedEvent.stopLoss ?? toPriceText(normalizedEvent.stopPrice),
     stopPrice: normalizedEvent.stopPrice,
-    target: toPriceText(normalizedEvent.targetPrice),
+    target: normalizedEvent.target ?? toPriceText(normalizedEvent.targetPrice),
     targetPrice: normalizedEvent.targetPrice,
-    thesis: `${normalizedEvent.product} ${normalizedEvent.side} setup monitoring ${normalizedEvent.marketState.replace(/_/g, " ")}.`,
+    thesis: normalizedEvent.thesis
+      ?? `${normalizedEvent.product} ${normalizedEvent.side} setup monitoring ${normalizedEvent.marketState.replace(/_/g, " ")}.`,
     status: "ACTIVE",
     source: normalizedEvent.source,
     timeframe: normalizedEvent.timeframe,
@@ -565,7 +772,7 @@ function buildSignalDocument(normalizedEvent, { signalId, tradeId }) {
     eventType: normalizedEvent.eventType,
     eventId: normalizedEvent.eventId,
     rrPlanned: normalizedEvent.rrPlanned,
-    rrTarget: normalizedEvent.rrPlanned,
+    rrTarget: normalizedEvent.rrTarget ?? normalizedEvent.rrPlanned,
     signalTime: signalTimestamp,
     entryTime: signalTimestamp,
     reviewStatus: "APPROVED",
@@ -682,6 +889,81 @@ function normalizeEventType(value, event) {
   return event === "entry" ? "signal.entry" : "signal.exit";
 }
 
+function isEthContinuationPayload(payload) {
+  const strategy = optionalNonEmptyString(payload.strategy) ?? optionalNonEmptyString(payload.strategyName);
+  const strategyTag = optionalNonEmptyString(payload.strategyTag) ?? optionalNonEmptyString(payload.automationTag);
+  const ticker = normalizeTickerSymbol(payload.ticker);
+  const symbol = normalizeTickerSymbol(payload.symbol);
+
+  return [
+    strategy,
+    strategyTag,
+  ].some((value) => typeof value === "string" && value.toLowerCase().includes("eth continuation"))
+    || ticker === "ETHUSD"
+    || symbol === "ETHUSD";
+}
+
+function normalizeTickerSymbol(value) {
+  const normalizedValue = normalizeSymbol(value);
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const [, symbolWithoutExchange] = normalizedValue.match(/^[A-Z0-9_]+:(.+)$/) ?? [];
+  return symbolWithoutExchange ?? normalizedValue;
+}
+
+function normalizeEthBarTime(barTimeValue, timestampValue, eventId) {
+  try {
+    return normalizeBarTime(barTimeValue, timestampValue);
+  } catch {
+    const eventIdTimestamp = extractTimestampFromEventId(eventId);
+    if (eventIdTimestamp !== null) {
+      return eventIdTimestamp;
+    }
+
+    throw createValidationError("barTime", "barTime or timestamp is required, or eventId must include a unix timestamp in milliseconds.");
+  }
+}
+
+function extractTimestampFromEventId(eventId) {
+  const matches = String(eventId).match(/\b\d{13}\b/g) ?? [];
+  const timestamp = matches
+    .map((value) => Number(value))
+    .find((value) => Number.isInteger(value) && value > 0);
+
+  return timestamp ?? null;
+}
+
+function normalizeEthRrPlanned(payload, prices) {
+  const explicitRr = toFiniteNumber(payload.rrPlanned ?? payload.rrTarget);
+  if (explicitRr !== null && explicitRr > 0) {
+    return explicitRr;
+  }
+
+  const riskPerTrade = toFiniteNumber(payload.riskPerTrade);
+  const rewardPlanned = toFiniteNumber(payload.rewardPlanned);
+  if (riskPerTrade !== null && rewardPlanned !== null && riskPerTrade !== 0) {
+    const computedRr = Math.abs(rewardPlanned / riskPerTrade);
+    return Number.isFinite(computedRr) && computedRr > 0 ? roundRatio(computedRr) : null;
+  }
+
+  const { entryPrice, stopPrice, targetPrice } = prices;
+  if (entryPrice !== undefined && stopPrice !== undefined && targetPrice !== undefined) {
+    const risk = Math.abs(entryPrice - stopPrice);
+    const reward = Math.abs(targetPrice - entryPrice);
+    if (risk > 0 && reward > 0) {
+      return roundRatio(reward / risk);
+    }
+  }
+
+  return null;
+}
+
+function roundRatio(value) {
+  return Math.round(value * 100) / 100;
+}
+
 function normalizeBarTime(barTimeValue, timestampValue) {
   const fromBarTime = toFiniteNumber(barTimeValue);
   if (fromBarTime !== null && Number.isInteger(fromBarTime) && fromBarTime > 0) {
@@ -717,6 +999,14 @@ function normalizeConfidence(value) {
   }
 
   return optionalNonEmptyString(value) ?? DEFAULT_CONFIDENCE;
+}
+
+function optionalPositiveNumber(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  return requirePositiveNumber(value, fieldName);
 }
 
 function optionalNonEmptyString(value) {
@@ -829,6 +1119,42 @@ function parseJsonBody(body) {
   return isPlainObject(body) ? body : null;
 }
 
+function describePayloadShape(payload) {
+  if (Array.isArray(payload)) {
+    return "array";
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return typeof payload;
+  }
+
+  const keys = Object.keys(payload).sort();
+  return `object:${keys.join(",")}`;
+}
+
+function extractEventId(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  return typeof payload.eventId === "string" && payload.eventId.trim()
+    ? payload.eventId.trim()
+    : null;
+}
+
+function normalizeIncomingEventHint(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "entry" || normalized === "exit") {
+    return normalized;
+  }
+
+  return null;
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -907,6 +1233,82 @@ function createRelayHttpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function createValidationError(field, message) {
+  const error = new Error(message);
+  error.field = field;
+  return error;
+}
+
+function buildValidationFailureDetails(payload, error) {
+  const reason = getErrorMessage(error);
+  const detectedProduct = detectPayloadProduct(payload);
+  const detectedStrategy = optionalNonEmptyString(payload.strategy)
+    ?? optionalNonEmptyString(payload.strategyName)
+    ?? optionalNonEmptyString(payload.strategyTag)
+    ?? optionalNonEmptyString(payload.automationTag)
+    ?? null;
+  const field = inferValidationField(error, reason);
+
+  return {
+    error: reason,
+    field,
+    detectedProduct,
+    detectedStrategy,
+    log: {
+      event: typeof payload?.event === "string" ? payload.event : null,
+      eventId: typeof payload?.eventId === "string" ? payload.eventId : null,
+      strategy: detectedStrategy,
+      symbol: typeof payload?.symbol === "string" ? payload.symbol : null,
+      ticker: typeof payload?.ticker === "string" ? payload.ticker : null,
+      reason,
+      field,
+      detectedProduct,
+    },
+  };
+}
+
+function detectPayloadProduct(payload) {
+  if (!isPlainObject(payload)) {
+    return "unknown";
+  }
+
+  if (isEthContinuationPayload(payload)) {
+    return ETH_CONTINUATION_PRODUCT_CONFIG.product;
+  }
+
+  const metadataValues = [
+    payload.product,
+    payload.productCode,
+    payload.engine,
+    payload.engineCode,
+    payload.strategyName,
+    payload.automationTag,
+  ].filter((value) => typeof value === "string");
+
+  if (metadataValues.some((value) => value.toLowerCase().includes("momentum"))) {
+    return MOMENTUM_PRODUCT_CONFIG.product;
+  }
+
+  if (metadataValues.some((value) => value.toLowerCase().includes("precision"))) {
+    return PRECISION_PRODUCT_CONFIG.product;
+  }
+
+  return metadataValues[0] ?? "unknown";
+}
+
+function inferValidationField(error, reason) {
+  if (error && typeof error === "object" && typeof error.field === "string") {
+    return error.field;
+  }
+
+  if (reason.startsWith("Unsupported field(s):")) {
+    return reason.replace("Unsupported field(s):", "").split(",")[0]?.trim() || "unknown";
+  }
+
+  const fieldMatch = reason.match(/^([A-Za-z][A-Za-z0-9_.]*)\s/);
+  return fieldMatch?.[1] ?? "unknown";
 }
 
 function isRelayHttpError(value) {

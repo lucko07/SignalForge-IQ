@@ -1,3 +1,4 @@
+import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 
 type FaqItem = {
@@ -141,6 +142,13 @@ const faqCategories: FaqCategory[] = [
 function FaqPage() {
   return (
     <section style={pageStyle}>
+      <Helmet>
+        <title>SignalForge IQ FAQ | Trading Signals Questions Answered</title>
+        <meta
+          name="description"
+          content="Find answers to common questions about SignalForge IQ, trading signals, subscriptions, and automation."
+        />
+      </Helmet>
       <div style={heroStyle}>
         <p style={eyebrowStyle}>Support Center</p>
         <h1 style={heroTitleStyle}>Frequently Asked Questions</h1>
@@ -200,7 +208,7 @@ const heroStyle = {
   gap: "0.85rem",
   padding: "2rem",
   borderRadius: "24px",
-  border: "1px solid #d0d5dd",
+  border: "1px solid var(--color-hero-border)",
   background:
     "linear-gradient(135deg, rgba(16,24,40,1) 0%, rgba(29,41,57,1) 58%, rgba(71,84,103,1) 100%)",
   color: "#ffffff",
@@ -240,9 +248,9 @@ const categoryCardStyle = {
   gap: "1.2rem",
   padding: "1.5rem",
   borderRadius: "22px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-  boxShadow: "0 10px 30px rgba(16, 24, 40, 0.05)",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
+  boxShadow: "var(--shadow-soft)",
 };
 
 const categoryHeaderStyle = {
@@ -252,7 +260,7 @@ const categoryHeaderStyle = {
 
 const categoryEyebrowStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   fontWeight: 700,
   letterSpacing: "0.06em",
   textTransform: "uppercase" as const,
@@ -261,13 +269,13 @@ const categoryEyebrowStyle = {
 
 const categoryTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.45rem",
 };
 
 const categoryDescriptionStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.65,
 };
 
@@ -277,9 +285,9 @@ const accordionStackStyle = {
 };
 
 const accordionItemStyle = {
-  border: "1px solid #eaecf0",
+  border: "1px solid var(--color-border)",
   borderRadius: "16px",
-  backgroundColor: "#f8fafc",
+  backgroundColor: "var(--color-surface-alt)",
   padding: "0.95rem 1rem",
 };
 
@@ -290,20 +298,20 @@ const accordionSummaryStyle = {
   gap: "0.75rem",
   cursor: "pointer",
   listStyle: "none",
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontWeight: 700,
 };
 
 const accordionIconStyle = {
   flexShrink: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   fontSize: "1.1rem",
   lineHeight: 1,
 };
 
 const accordionAnswerStyle = {
   margin: "0.9rem 0 0",
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.7,
 };
 
@@ -314,8 +322,8 @@ const supportCardStyle = {
   alignItems: "center",
   padding: "1.5rem",
   borderRadius: "22px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#f8fafc",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 const supportTextStyle = {
@@ -331,8 +339,8 @@ const supportLinkStyle = {
   justifyContent: "center",
   padding: "0.9rem 1.1rem",
   borderRadius: "12px",
-  backgroundColor: "#101828",
-  color: "#ffffff",
+  backgroundColor: "var(--color-button-primary)",
+  color: "var(--color-button-primary-text)",
   fontWeight: 700,
 };
 

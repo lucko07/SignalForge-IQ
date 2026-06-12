@@ -20,6 +20,7 @@ import { db } from "./firebase";
 export const signalStatuses = [
   "PENDING",
   "ACTIVE",
+  "REJECTED",
   "TAKE_PROFIT",
   "STOPPED",
   "CLOSED",
@@ -419,7 +420,7 @@ const mapSignalDocument = (signalDocument: QueryDocumentSnapshot<DocumentData>) 
     stopLoss: String(data.stopLoss ?? ""),
     target: String(data.target ?? ""),
     thesis: String(data.thesis ?? ""),
-    status: normalizeSignalStatus(data.status),
+    status: resolveSignalStatus(data),
     source: data.source ? String(data.source) : undefined,
     timeframe: data.timeframe ? String(data.timeframe) : undefined,
     confidence: data.confidence ? String(data.confidence) : undefined,
@@ -466,7 +467,7 @@ const mapPendingSignalDocument = (
     stopLoss: String(data.stopLoss ?? ""),
     target: String(data.target ?? ""),
     thesis: String(data.thesis ?? ""),
-    status: normalizeSignalStatus(data.status),
+    status: resolveSignalStatus(data),
     source: data.source ? String(data.source) : undefined,
     timeframe: data.timeframe ? String(data.timeframe) : undefined,
     confidence: data.confidence ? String(data.confidence) : undefined,
@@ -591,14 +592,41 @@ const normalizeReviewStatus = (value: unknown): ReviewStatus => {
   return "PENDING";
 };
 
-const normalizeSignalStatus = (value: unknown): SignalStatus => {
+const normalizeSignalStatusValue = (value: unknown): SignalStatus | null => {
   const normalizedValue = typeof value === "string" ? value.trim().toUpperCase() : "";
 
   if (signalStatuses.includes(normalizedValue as SignalStatus)) {
     return normalizedValue as SignalStatus;
   }
 
+  return null;
+};
+
+const isRejectedLifecycleValue = (value: unknown) => (
+  typeof value === "string" && value.trim().toUpperCase() === "REJECTED"
+);
+
+const resolveSignalStatus = (data: DocumentData): SignalStatus => {
+  const normalizedStatus = normalizeSignalStatusValue(data.status);
+
+  if (normalizedStatus) {
+    return normalizedStatus;
+  }
+
+  if (
+    isRejectedLifecycleValue(data.executionStatus)
+    || isRejectedLifecycleValue(data.tradeResult)
+    || isRejectedLifecycleValue(data.result)
+  ) {
+    return "REJECTED";
+  }
+
   return "PENDING";
+};
+
+const normalizeSignalStatus = (value: unknown): SignalStatus => {
+  const normalizedStatus = normalizeSignalStatusValue(value);
+  return normalizedStatus ?? "PENDING";
 };
 
 const normalizeSignalOutcome = (value: unknown): SignalOutcome | undefined => {

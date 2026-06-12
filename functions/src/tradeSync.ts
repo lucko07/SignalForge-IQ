@@ -1,10 +1,16 @@
 import { FieldValue, type DocumentData, type Firestore, type Timestamp } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
+import {
+  buildPendingExecutionTradePatch,
+  getCanonicalTradeStatus,
+  isTerminalTradeStatus,
+  type CanonicalTradeStatus,
+  type TradeLifecycleResult,
+} from "./tradeLifecycle.js";
 
 export const TRADES_COLLECTION_NAME = "trades";
 
 type TradeSide = "long" | "short";
-type TradeResult = "open" | "win" | "loss" | "breakeven";
 
 type NormalizedTrade = {
   signalId: string;
@@ -25,7 +31,12 @@ type NormalizedTrade = {
   rrActual: number | null;
   pnlDollar: number | null;
   pnlPercent: number | null;
-  result: TradeResult;
+  result: TradeLifecycleResult | null;
+  status: CanonicalTradeStatus;
+  tradeResult: CanonicalTradeStatus | "closed";
+  executionStatus?: string | null;
+  rejectionReason: string | null;
+  finalizedAt: FieldValue | null;
   fees: number;
   slippage: number;
   marketSession: string;
@@ -305,6 +316,7 @@ const normalizeSignalForTrade = (
   const { dayOfWeek, entryHourNY } = buildNyCalendarFields(entryTime);
 
   return {
+    ...buildPendingExecutionTradePatch(),
     signalId,
     tradeId: signalId,
     strategyVersion:
@@ -326,7 +338,6 @@ const normalizeSignalForTrade = (
     rrActual: null,
     pnlDollar: null,
     pnlPercent: null,
-    result: "open",
     fees: 0,
     slippage: 0,
     marketSession: toTrimmedText(cleanedData.marketSession) ?? DEFAULT_MARKET_SESSION,
@@ -341,7 +352,6 @@ const normalizeSignalForTrade = (
     isTest: toBoolean(cleanedData.isTest, false),
     isValid: true,
     createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
   };
 };
 
@@ -362,9 +372,22 @@ export const syncSignalToTrade = async (
     const existingTradeSnapshot = await transaction.get(tradeReference);
 
     if (existingTradeSnapshot.exists) {
+      const existingTrade = existingTradeSnapshot.data() as DocumentData;
+      const currentStatus = getCanonicalTradeStatus(existingTrade);
+
+      if (currentStatus && isTerminalTradeStatus(currentStatus)) {
+        logger.info("Skipping signal trade sync because trade is already terminal.", {
+          signalId,
+          tradeId: signalId,
+          currentStatus,
+        });
+        return { status: "skipped-terminal-trade" as const, currentStatus };
+      }
+
       logger.info("Trade already exists for signal. Skipping duplicate creation.", {
         signalId,
         tradeId: signalId,
+        currentStatus: currentStatus ?? null,
       });
       return { status: "skipped-existing-trade" as const };
     }

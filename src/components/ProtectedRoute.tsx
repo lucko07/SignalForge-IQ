@@ -10,6 +10,7 @@ type ProtectedRouteProps = {
   requireElite?: boolean;
   requireAutomation?: boolean;
   requireLegalConsent?: boolean;
+  requirePaidPlan?: boolean;
   redirectTo?: string;
 };
 

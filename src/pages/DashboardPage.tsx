@@ -1,21 +1,79 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import type { Timestamp } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import SignalCard from "../components/SignalCard";
 import TradingDisclaimer from "../components/TradingDisclaimer";
 import { useAuth } from "../context/auth-context";
 import { signOut } from "../lib/auth";
 import { openBillingPortal } from "../lib/billing";
+import { functions } from "../lib/firebase";
 import {
   getPerformanceSummary,
   subscribeToSignals,
 } from "../lib/firestore";
 import type { PerformanceSummary, Signal } from "../lib/firestore";
-import { getEffectiveManagedPlan, isStripeManagedUser } from "../lib/userProfiles";
+import { getEffectiveManagedPlan, isAdminProfile, isStripeManagedUser } from "../lib/userProfiles";
 
 type AccountStatusBannerState = {
   tone: "admin" | "neutral" | "success" | "warning";
   message: string;
+};
+
+type KrakenReadOnlyTestResponse = {
+  ok: boolean;
+  connected: boolean;
+  provider: "kraken";
+  mode: "read_only";
+  balanceAssetCount: number;
+  nonZeroBalanceAssets: string[];
+  openOrdersCount: number | null;
+  permissionsStatus: string | null;
+  serverTime: {
+    unixtime: number | null;
+    rfc1123: string | null;
+  } | null;
+  responseTimestamp: string;
+  lastCheckedAt: string;
+  messages: {
+    balance: string | null;
+    openOrders: string | null;
+    warning: string;
+  };
+  diagnostics?: Record<string, unknown>;
+  error?: {
+    category: string;
+    message: string;
+  } | null;
+};
+
+type KrakenLiveRiskCheckResponse = {
+  ok: boolean;
+  provider: "kraken";
+  mode: "live";
+  liveEnabled: boolean;
+  allowedSymbols: string[];
+  maxNotionalUsd: number;
+  killSwitch: boolean;
+  maxOpenPositions: number;
+  maxTradesPerDay: number;
+  validation: {
+    allowed: boolean;
+    reason: string | null;
+    summary: Record<string, unknown>;
+  };
+  diagnostics?: {
+    balance?: {
+      available: boolean;
+      error: {
+        category: string;
+        message: string;
+      } | null;
+    };
+    availableUsd?: number | null;
+    noLiveOrderEndpointsCalled?: boolean;
+    blockedEndpoints?: string[];
+  };
 };
 
 function DashboardPage() {
@@ -61,6 +119,18 @@ export function DashboardHomeContent() {
   const [isPerformanceLoading, setIsPerformanceLoading] = useState(true);
   const [performanceError, setPerformanceError] = useState("");
   const [billingActionError, setBillingActionError] = useState("");
+  const [krakenReadOnlyStatus, setKrakenReadOnlyStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [krakenReadOnlyMessage, setKrakenReadOnlyMessage] = useState("idle");
+  const [krakenReadOnlyDiagnostics, setKrakenReadOnlyDiagnostics] =
+    useState<KrakenReadOnlyTestResponse | null>(null);
+  const [krakenLiveRiskStatus, setKrakenLiveRiskStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [krakenLiveRiskMessage, setKrakenLiveRiskMessage] = useState("idle");
+  const [krakenLiveRiskDiagnostics, setKrakenLiveRiskDiagnostics] =
+    useState<KrakenLiveRiskCheckResponse | null>(null);
 
   useEffect(() => {
     if (!hasSubscriptionAccess) {
@@ -158,6 +228,107 @@ export function DashboardHomeContent() {
     }
   };
 
+  const canSeeAdminTools = isAdmin || isAdminProfile(profile);
+  const isDevelopment = import.meta.env.DEV;
+
+  const handleKrakenReadOnlyTest = async () => {
+    if (!canSeeAdminTools) {
+      return;
+    }
+
+    setKrakenReadOnlyStatus("loading");
+    setKrakenReadOnlyMessage("loading");
+    setKrakenReadOnlyDiagnostics(null);
+
+    try {
+      const callable = httpsCallable<undefined, KrakenReadOnlyTestResponse>(
+        functions,
+        "runAdminKrakenReadOnlyTest"
+      );
+      const response = await callable();
+
+      if (isDevelopment) {
+        console.debug("Kraken read-only sanitized diagnostics", response.data);
+      }
+
+      setKrakenReadOnlyDiagnostics(response.data);
+
+      if (response.data.connected) {
+        setKrakenReadOnlyStatus("success");
+        setKrakenReadOnlyMessage(
+          response.data.messages.balance
+            ?? `Connected successfully. ${response.data.balanceAssetCount} balance asset(s), ${response.data.openOrdersCount ?? "unknown"} open order(s).`
+        );
+        return;
+      }
+
+      setKrakenReadOnlyStatus("error");
+      setKrakenReadOnlyMessage(response.data.error?.message ?? "Kraken read-only connection failed.");
+    } catch (error) {
+      if (isDevelopment) {
+        console.error("Kraken read-only connection test error", error);
+      }
+      setKrakenReadOnlyStatus("error");
+      setKrakenReadOnlyMessage("Kraken read-only connection failed.");
+    }
+  };
+
+  const handleKrakenLiveRiskCheck = async () => {
+    if (!canSeeAdminTools) {
+      return;
+    }
+
+    setKrakenLiveRiskStatus("loading");
+    setKrakenLiveRiskMessage("loading");
+    setKrakenLiveRiskDiagnostics(null);
+
+    try {
+      const callable = httpsCallable<undefined, KrakenLiveRiskCheckResponse>(
+        functions,
+        "runAdminKrakenLiveRiskCheck"
+      );
+      const response = await callable();
+      const sanitizedPayload: KrakenLiveRiskCheckResponse = {
+        ok: response.data.ok,
+        provider: response.data.provider,
+        mode: response.data.mode,
+        liveEnabled: response.data.liveEnabled,
+        allowedSymbols: response.data.allowedSymbols,
+        maxNotionalUsd: response.data.maxNotionalUsd,
+        killSwitch: response.data.killSwitch,
+        maxOpenPositions: response.data.maxOpenPositions,
+        maxTradesPerDay: response.data.maxTradesPerDay,
+        validation: response.data.validation,
+        diagnostics: {
+          balance: response.data.diagnostics?.balance,
+          availableUsd: response.data.diagnostics?.availableUsd ?? null,
+          noLiveOrderEndpointsCalled: response.data.diagnostics?.noLiveOrderEndpointsCalled,
+          blockedEndpoints: response.data.diagnostics?.blockedEndpoints,
+        },
+      };
+
+      if (isDevelopment) {
+        console.debug("Kraken live risk sanitized diagnostics", sanitizedPayload);
+      }
+
+      setKrakenLiveRiskDiagnostics(sanitizedPayload);
+      setKrakenLiveRiskStatus("success");
+      setKrakenLiveRiskMessage(
+        sanitizedPayload.validation.allowed
+          ? "Risk policy passed. Live order placement remains blocked."
+          : `Risk policy blocked: ${sanitizedPayload.validation.reason ?? "unknown"}`
+      );
+    } catch (error) {
+      if (isDevelopment) {
+        console.error("Kraken live risk check error", {
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+      setKrakenLiveRiskStatus("error");
+      setKrakenLiveRiskMessage("Kraken live risk check failed.");
+    }
+  };
+
   const usingFallbackSignals = !isSignalsLoading && liveSignals.length === 0;
   const recentClosedSignals = liveSignals
     .filter((signal) => signal.status === "CLOSED" || signal.status === "CANCELLED")
@@ -226,9 +397,9 @@ export function DashboardHomeContent() {
       <section style={sectionCardStyle}>
         <div style={sectionHeaderStyle}>
           <div>
-            <h2 style={{ margin: 0, color: "#101828" }}>BTC Product Lineup</h2>
+            <h2 style={{ margin: 0, color: "#101828" }}>Live Product Lineup</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
-              SignalForge IQ is currently launched around one live BTC product and one visible future module.
+              SignalForge IQ currently includes two live strategy products and one visible future BTC module.
             </p>
           </div>
         </div>
@@ -239,6 +410,13 @@ export function DashboardHomeContent() {
             status="Live"
             detail="Selective BTC trade activation built for cleaner structure, stronger confirmation, and disciplined signal quality."
             footnote="Monitoring BTC for qualified precision setups. Built to avoid overtrading."
+            tone="live"
+          />
+          <ProductStatusCard
+            title="BTC Continuation Engine"
+            status="Live"
+            detail="BTC-focused continuation strategy for structured 30-minute setups. Backtested on BTCUSD 30m."
+            footnote="Backtested performance is not a guarantee of future results."
             tone="live"
           />
           <ProductStatusCard
@@ -313,7 +491,7 @@ export function DashboardHomeContent() {
         </div>
       </div>
 
-      {isAdmin ? (
+      {canSeeAdminTools ? (
         <div
           style={{
             padding: "1.5rem",
@@ -348,6 +526,182 @@ export function DashboardHomeContent() {
               </Link>
             </div>
           </div>
+
+          <div style={billingNoticeStyle}>
+            <strong>Kraken read-only connectivity</strong>
+            <p style={{ margin: 0 }}>
+              Read-only check only. Live execution remains disabled.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={handleKrakenReadOnlyTest}
+                disabled={krakenReadOnlyStatus === "loading"}
+                style={portalButtonStyle(krakenReadOnlyStatus === "loading")}
+              >
+                {krakenReadOnlyStatus === "loading"
+                  ? "Testing Kraken..."
+                  : "Test Kraken Read-Only Connection"}
+              </button>
+              <span style={{ color: "#475467", fontWeight: 700 }}>
+                {krakenReadOnlyMessage}
+              </span>
+            </div>
+            {krakenReadOnlyDiagnostics ? (
+              <div style={{ display: "grid", gap: "0.85rem" }}>
+                <div style={statsGridStyle}>
+                  <StatCard
+                    label="Connected"
+                    value={krakenReadOnlyDiagnostics.connected ? "true" : "false"}
+                  />
+                  <StatCard label="Provider" value={krakenReadOnlyDiagnostics.provider} />
+                  <StatCard label="Mode" value={krakenReadOnlyDiagnostics.mode} />
+                  <StatCard
+                    label="Balance Assets"
+                    value={String(krakenReadOnlyDiagnostics.balanceAssetCount)}
+                  />
+                  <StatCard
+                    label="Open Orders"
+                    value={
+                      krakenReadOnlyDiagnostics.openOrdersCount === null
+                        ? "unknown"
+                        : String(krakenReadOnlyDiagnostics.openOrdersCount)
+                    }
+                  />
+                  <StatCard
+                    label="Permissions"
+                    value={formatDiagnosticLabel(krakenReadOnlyDiagnostics.permissionsStatus ?? "unknown")}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: "0.35rem", color: "#475467" }}>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>Non-zero spot balance assets:</strong>{" "}
+                    {krakenReadOnlyDiagnostics.nonZeroBalanceAssets.length > 0
+                      ? krakenReadOnlyDiagnostics.nonZeroBalanceAssets.join(", ")
+                      : "None detected"}
+                  </p>
+                  {krakenReadOnlyDiagnostics.messages.balance ? (
+                    <p style={{ margin: 0 }}>{krakenReadOnlyDiagnostics.messages.balance}</p>
+                  ) : null}
+                  {krakenReadOnlyDiagnostics.messages.openOrders ? (
+                    <p style={{ margin: 0 }}>{krakenReadOnlyDiagnostics.messages.openOrders}</p>
+                  ) : null}
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>Server time:</strong>{" "}
+                    {formatKrakenServerTime(krakenReadOnlyDiagnostics)}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>Last checked:</strong>{" "}
+                    {formatDisplayTimestamp(krakenReadOnlyDiagnostics.lastCheckedAt)}
+                  </p>
+                  <p style={{ margin: 0, color: "#9a3412", fontWeight: 700 }}>
+                    {krakenReadOnlyDiagnostics.messages.warning}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={billingNoticeStyle}>
+            <strong>Kraken Live Risk Check</strong>
+            <p style={{ margin: 0 }}>
+              Live order placement remains blocked. This is a diagnostics-only check.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={handleKrakenLiveRiskCheck}
+                disabled={krakenLiveRiskStatus === "loading"}
+                style={portalButtonStyle(krakenLiveRiskStatus === "loading")}
+              >
+                {krakenLiveRiskStatus === "loading"
+                  ? "Running check..."
+                  : "Run Kraken Live Risk Check"}
+              </button>
+              <span style={{ color: "#475467", fontWeight: 700 }}>
+                {krakenLiveRiskMessage}
+              </span>
+            </div>
+            {krakenLiveRiskDiagnostics ? (
+              <div style={{ display: "grid", gap: "0.85rem" }}>
+                <div style={statsGridStyle}>
+                  <StatCard
+                    label="Live Enabled"
+                    value={krakenLiveRiskDiagnostics.liveEnabled ? "true" : "false"}
+                  />
+                  <StatCard
+                    label="Allowed Symbols"
+                    value={
+                      krakenLiveRiskDiagnostics.allowedSymbols.length > 0
+                        ? krakenLiveRiskDiagnostics.allowedSymbols.join(", ")
+                        : "None"
+                    }
+                  />
+                  <StatCard
+                    label="Max Notional"
+                    value={`$${krakenLiveRiskDiagnostics.maxNotionalUsd.toFixed(2)}`}
+                  />
+                  <StatCard
+                    label="Kill Switch"
+                    value={krakenLiveRiskDiagnostics.killSwitch ? "true" : "false"}
+                  />
+                  <StatCard
+                    label="Max Open Positions"
+                    value={String(krakenLiveRiskDiagnostics.maxOpenPositions)}
+                  />
+                  <StatCard
+                    label="Max Trades / Day"
+                    value={String(krakenLiveRiskDiagnostics.maxTradesPerDay)}
+                  />
+                  <StatCard
+                    label="USD Balance"
+                    value={formatNullableUsd(krakenLiveRiskDiagnostics.diagnostics?.availableUsd)}
+                  />
+                  <StatCard
+                    label="Validation"
+                    value={krakenLiveRiskDiagnostics.validation.allowed ? "Allowed" : "Blocked"}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: "0.35rem", color: "#475467" }}>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>Reason:</strong>{" "}
+                    {krakenLiveRiskDiagnostics.validation.reason
+                      ? formatDiagnosticLabel(krakenLiveRiskDiagnostics.validation.reason)
+                      : "None"}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>No live order endpoints called:</strong>{" "}
+                    {krakenLiveRiskDiagnostics.diagnostics?.noLiveOrderEndpointsCalled === true ? "true" : "unknown"}
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: "#101828" }}>Blocked endpoints:</strong>{" "}
+                    {krakenLiveRiskDiagnostics.diagnostics?.blockedEndpoints?.length
+                      ? krakenLiveRiskDiagnostics.diagnostics.blockedEndpoints.join(", ")
+                      : "Not returned"}
+                  </p>
+                  <details>
+                    <summary style={{ cursor: "pointer", color: "#101828", fontWeight: 700 }}>
+                      Validation summary
+                    </summary>
+                    <pre
+                      style={{
+                        margin: "0.75rem 0 0",
+                        padding: "0.85rem",
+                        borderRadius: "12px",
+                        backgroundColor: "#101828",
+                        color: "#f8fafc",
+                        overflowX: "auto",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {formatDiagnosticJson(krakenLiveRiskDiagnostics.validation.summary)}
+                    </pre>
+                  </details>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
         </div>
       ) : (
         <div
@@ -366,7 +720,7 @@ export function DashboardHomeContent() {
               Your plan access and billing status are shown here.
             </p>
             <p style={{ margin: "0.4rem 0 0", color: "#667085" }}>
-              Pro is the Decision Engine. Elite is the Execution System for members who want
+              Pro includes the live BTC Precision Engine and BTC Continuation Engine. Elite adds the Execution System for members who want
               automation, routing, and delivery controls inside the same workflow.
             </p>
           </div>
@@ -472,7 +826,7 @@ export function DashboardHomeContent() {
             <h2 style={{ margin: 0, color: "#101828" }}>Trading Signals</h2>
             <p style={{ margin: "0.4rem 0 0", color: "#475467" }}>
               {hasSubscriptionAccess
-                ? "BTC Precision Engine signals are shown here first."
+                ? "BTC Precision Engine and BTC Continuation Engine signals are shown here first."
                 : "Upgrade to Pro to unlock the full member signal feed."}
             </p>
           </div>
@@ -509,7 +863,7 @@ export function DashboardHomeContent() {
           >
             <strong>No qualified setup detected.</strong>
             <p style={{ margin: 0 }}>
-              BTC Precision Engine is actively monitoring BTC. No setup currently meets the required structure, trend, and confirmation criteria.
+              The live SignalForge IQ lineup is actively monitoring BTC strategies. No setup currently meets the required structure, trend, and confirmation criteria.
             </p>
             <p style={{ margin: 0 }}>
               The system remains selective by design to avoid low-quality trades.
@@ -919,5 +1273,49 @@ const isBillingIssueStatus = (billingStatus?: string) => {
 };
 
 const capitalizePlan = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+
+const formatDisplayTimestamp = (isoString: string) => {
+  const parsed = new Date(isoString);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "Not available";
+  }
+
+  return parsed.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+};
+
+const formatDiagnosticLabel = (value: string) =>
+  value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+
+const formatNullableUsd = (value?: number | null) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "Not returned";
+  }
+
+  return `$${value.toFixed(2)}`;
+};
+
+const formatDiagnosticJson = (value: Record<string, unknown>) => (
+  JSON.stringify(value, null, 2)
+);
+
+const formatKrakenServerTime = (diagnostics: KrakenReadOnlyTestResponse) => {
+  if (diagnostics.serverTime?.rfc1123) {
+    return diagnostics.serverTime.rfc1123;
+  }
+
+  if (typeof diagnostics.serverTime?.unixtime === "number") {
+    return formatDisplayTimestamp(new Date(diagnostics.serverTime.unixtime * 1000).toISOString());
+  }
+
+  return formatDisplayTimestamp(diagnostics.responseTimestamp);
+};
 
 export default DashboardPage;

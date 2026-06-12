@@ -36,7 +36,7 @@ const planDetails: Record<
     recommendation:
       "Choose Pro when your priority is making better decisions inside a disciplined daily workflow.",
     features: [
-      "Live BTC Precision Engine access with disciplined signal monitoring",
+      "Live BTC Precision Engine and BTC Continuation Engine access with disciplined signal monitoring",
       "Confidence score to help frame conviction",
       "Analytics and trade history for disciplined review",
       "Market context throughout the day, plus visibility into the upcoming BTC Momentum module",
@@ -67,7 +67,7 @@ const planDetails: Record<
     recommendation:
       "Most serious users choose Elite when they want SignalForge IQ to support faster, more consistent operational workflows.",
     features: [
-      "Everything in the Decision Engine",
+      "Everything in the Decision Engine, including BTC strategy access",
       "Execution-ready delivery and routing controls",
       "Automation activation from the dashboard",
       "Stronger fit for accounts built around speed and consistency",
@@ -174,7 +174,7 @@ function UpgradePage() {
         </p>
         <p style={heroSubBodyStyle}>
           SignalForge IQ is structured to stay valuable every day through signal monitoring, confidence framing,
-          and qualified setup visibility even when no trade is active. BTC Precision Engine is live today, while BTC Momentum remains visible as a future-facing module.
+          and qualified setup visibility even when no trade is active. BTC Precision Engine and BTC Continuation Engine are live today, while BTC Momentum remains visible as a future-facing module.
         </p>
       </div>
 
@@ -261,7 +261,7 @@ function UpgradePage() {
           <p style={recommendationBodyStyle}>
             {requestedPlan === "elite"
               ? "If automation, delivery controls, or routing matter to your workflow, Elite is the correct plan. It is built to help members operate faster and more consistently."
-              : "If you want live BTC Precision Engine access, confidence, analytics, and market context without moving into execution routing yet, Pro is a strong fit."}
+              : "If you want live BTC Precision Engine and BTC Continuation Engine access, confidence, analytics, and market context without moving into execution routing yet, Pro is a strong fit."}
           </p>
         </div>
 

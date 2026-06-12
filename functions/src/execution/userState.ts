@@ -21,6 +21,7 @@ const DEFAULT_AUTOMATION_SETTINGS: AutomationSettings = {
   sizingMode: "fixed_notional",
   notionalUsd: 100,
   killSwitch: false,
+  allowUnprotectedMarketEntry: false,
 };
 
 const normalizeBoolean = (value: unknown, fallback: boolean) => (
@@ -49,6 +50,14 @@ const normalizeSymbolAllowlist = (value: unknown) => {
   return normalized.length > 0 ? [...new Set(normalized)] : [...DEFAULT_AUTOMATION_SETTINGS.symbolAllowlist];
 };
 
+const normalizeExecutionProvider = (value: unknown) => (
+  value === "kraken" ? "kraken" : DEFAULT_AUTOMATION_SETTINGS.provider
+);
+
+const normalizeExecutionMode = (value: unknown) => (
+  value === "live" ? "live" : DEFAULT_AUTOMATION_SETTINGS.mode
+);
+
 export const getDefaultBrokerConnection = (): BrokerConnection => ({
   ...DEFAULT_BROKER_CONNECTION,
 });
@@ -62,8 +71,8 @@ export const normalizeBrokerConnection = (value: unknown): BrokerConnection => {
   const source = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 
   return {
-    provider: source.provider === "alpaca" ? "alpaca" : DEFAULT_BROKER_CONNECTION.provider,
-    mode: source.mode === "paper" ? "paper" : DEFAULT_BROKER_CONNECTION.mode,
+    provider: source.provider === "kraken" ? "kraken" : DEFAULT_BROKER_CONNECTION.provider,
+    mode: source.mode === "live" ? "live" : DEFAULT_BROKER_CONNECTION.mode,
     connected: normalizeBoolean(source.connected, DEFAULT_BROKER_CONNECTION.connected),
     lastValidatedAt:
       source.lastValidatedAt instanceof Date
@@ -107,8 +116,8 @@ export const normalizeAutomationSettings = (value: unknown): AutomationSettings 
 
   return {
     enabled: normalizeBoolean(source.enabled, DEFAULT_AUTOMATION_SETTINGS.enabled),
-    provider: source.provider === "alpaca" ? "alpaca" : DEFAULT_AUTOMATION_SETTINGS.provider,
-    mode: source.mode === "paper" ? "paper" : DEFAULT_AUTOMATION_SETTINGS.mode,
+    provider: normalizeExecutionProvider(source.provider),
+    mode: normalizeExecutionMode(source.mode),
     symbolAllowlist: normalizeSymbolAllowlist(source.symbolAllowlist),
     longsEnabled: normalizeBoolean(source.longsEnabled, DEFAULT_AUTOMATION_SETTINGS.longsEnabled),
     shortsEnabled: normalizeBoolean(source.shortsEnabled, DEFAULT_AUTOMATION_SETTINGS.shortsEnabled),
@@ -119,17 +128,23 @@ export const normalizeAutomationSettings = (value: unknown): AutomationSettings 
       : DEFAULT_AUTOMATION_SETTINGS.sizingMode,
     notionalUsd: normalizePositiveNumber(source.notionalUsd, DEFAULT_AUTOMATION_SETTINGS.notionalUsd),
     killSwitch: normalizeBoolean(source.killSwitch, DEFAULT_AUTOMATION_SETTINGS.killSwitch),
+    allowUnprotectedMarketEntry: normalizeBoolean(
+      source.allowUnprotectedMarketEntry,
+      DEFAULT_AUTOMATION_SETTINGS.allowUnprotectedMarketEntry
+    ),
   };
 };
 
 export const isBrokerConnection = (value: unknown): value is BrokerConnection => {
   const normalized = normalizeBrokerConnection(value);
-  return normalized.provider === "alpaca" && normalized.mode === "paper";
+  return (normalized.provider === "alpaca" || normalized.provider === "kraken")
+    && (normalized.mode === "paper" || normalized.mode === "live");
 };
 
 export const isAutomationSettings = (value: unknown): value is AutomationSettings => {
   const normalized = normalizeAutomationSettings(value);
-  return normalized.provider === "alpaca" && normalized.mode === "paper";
+  return (normalized.provider === "alpaca" || normalized.provider === "kraken")
+    && (normalized.mode === "paper" || normalized.mode === "live");
 };
 
 export const isExecutionRecord = (value: unknown): value is ExecutionRecord => {
@@ -142,8 +157,8 @@ export const isExecutionRecord = (value: unknown): value is ExecutionRecord => {
   return typeof source.tradeId === "string"
     && typeof source.clientOrderId === "string"
     && typeof source.symbol === "string"
-    && source.provider === "alpaca"
-    && source.mode === "paper";
+    && (source.provider === "alpaca" || source.provider === "kraken")
+    && (source.mode === "paper" || source.mode === "live");
 };
 
 export const getBrokerConnection = async (db: Firestore, uid: string) => {

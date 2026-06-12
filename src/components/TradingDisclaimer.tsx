@@ -19,8 +19,8 @@ const cardContainerStyle = {
   gap: "0.45rem",
   padding: "1rem 1.1rem",
   borderRadius: "16px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#f8fafc",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 const compactContainerStyle = {
@@ -30,19 +30,19 @@ const compactContainerStyle = {
 };
 
 const titleStyle = {
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "0.95rem",
 };
 
 const bodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.65,
 };
 
 const compactBodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.6,
   fontSize: "0.92rem",
 };

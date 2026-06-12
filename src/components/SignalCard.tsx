@@ -250,6 +250,10 @@ const getStatusBadgeBackground = (status: string) => {
     return "#ecfdf3";
   }
 
+  if (normalizedStatus === "REJECTED") {
+    return "#fef3f2";
+  }
+
   if (normalizedStatus === "PENDING") {
     return "#fffaeb";
   }
@@ -278,6 +282,10 @@ const getStatusBadgeColor = (status: string) => {
 
   if (normalizedStatus === "ACTIVE") {
     return "#027a48";
+  }
+
+  if (normalizedStatus === "REJECTED") {
+    return "#b42318";
   }
 
   if (normalizedStatus === "PENDING") {

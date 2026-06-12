@@ -1,11 +1,17 @@
 import type { FieldValue, Timestamp } from "firebase-admin/firestore";
+import type { CanonicalTradeStatus, TradeLifecycleResult } from "../tradeLifecycle.js";
 
-export type ExecutionProvider = "alpaca";
-export type ExecutionMode = "paper";
+export type ExecutionProvider = "alpaca" | "kraken";
+export type ExecutionMode = "paper" | "live";
 export type ExecutionSizingMode = "fixed_notional";
 export type ExecutionPositionSide = "long" | "short";
 export type ExecutionOrderType = "market";
 export type ExecutionTimeInForce = "gtc";
+export type ExecutionProtectionStatus =
+  | "active"
+  | "failed"
+  | "completed"
+  | "missing_orders";
 
 export type BrokerConnection = {
   provider: ExecutionProvider;
@@ -29,6 +35,7 @@ export type AutomationSettings = {
   sizingMode: ExecutionSizingMode;
   notionalUsd: number;
   killSwitch: boolean;
+  allowUnprotectedMarketEntry: boolean;
 };
 
 export type ExecutionStatus =
@@ -38,15 +45,21 @@ export type ExecutionStatus =
   | "accepted"
   | "partially_filled"
   | "filled"
+  | "already_open"
   | "closed"
   | "already_closed"
   | "no_open_position"
+  | "no_position_to_close"
   | "duplicate_exit"
+  | "duplicate_event"
   | "rejected"
+  | "broker_rejected"
+  | "failed_validation"
   | "canceled"
   | "expired"
   | "duplicate"
   | "position_conflict"
+  | "protection_failed"
   | "skipped"
   | "error";
 
@@ -60,12 +73,24 @@ export type NormalizedTradeRecord = {
   entryPrice?: number | null;
   stopPrice?: number | null;
   targetPrice?: number | null;
-  result?: "open" | "win" | "loss" | "breakeven" | null;
+  result?: TradeLifecycleResult | null;
+  status?: CanonicalTradeStatus | null;
+  tradeResult?: CanonicalTradeStatus | "closed" | null;
+  executionStatus?: string | null;
+  rejectionReason?: string | null;
+  finalizedAt?: FieldValue | Timestamp | Date | string | null;
   isArchived?: boolean;
   isTest?: boolean;
   isValid?: boolean;
   createdAt?: Timestamp | Date | string | null;
   updatedAt?: Timestamp | Date | string | null;
+  executionProvider?: ExecutionProvider | null;
+  executionMode?: ExecutionMode | null;
+  brokerVenue?: string | null;
+  brokerPair?: string | null;
+  brokerAccountType?: "paper" | "live" | null;
+  marginEnabled?: boolean | null;
+  leverage?: number | null;
 };
 
 export type AlpacaAccount = {
@@ -94,16 +119,20 @@ export type AlpacaPosition = {
   cost_basis?: string;
   unrealized_pl?: string;
   unrealized_plpc?: string;
+  avg_entry_price?: string;
   current_price?: string;
 };
 
 export type AlpacaOrderRequest = {
-  symbol: "BTCUSD";
-  side: "buy";
-  type: "market";
+  symbol: string;
+  side: "buy" | "sell";
+  type: "market" | "limit" | "stop" | "stop_limit";
   time_in_force: "gtc";
-  notional: string;
+  notional?: string;
+  qty?: string;
   client_order_id: string;
+  limit_price?: string;
+  stop_price?: string;
 };
 
 export type AlpacaOrderResponse = {
@@ -150,9 +179,23 @@ export type ExecutionRecord = {
   positionSide: ExecutionPositionSide;
   orderType: ExecutionOrderType;
   timeInForce: ExecutionTimeInForce;
+  orderClass: "simple";
+  takeProfitPrice: number | null;
+  stopLossPrice: number | null;
+  protectionStatus: ExecutionProtectionStatus | null;
+  protectionMode: "synthetic_oco" | null;
+  protectionActivatedAt: FieldValue | Timestamp | Date | string | null;
+  protectionFailedAt: FieldValue | Timestamp | Date | string | null;
+  protectionError: string | null;
   qty: string | null;
   notional: string | null;
   alpacaOrderId: string | null;
+  brokerOrderId?: string | null;
+  brokerVenue?: string | null;
+  brokerPair?: string | null;
+  brokerAccountType?: "paper" | "live" | null;
+  marginEnabled?: boolean | null;
+  leverage?: number | null;
   clientOrderId: string;
   status: ExecutionStatus;
   submittedAt: FieldValue | Timestamp | null;
@@ -174,6 +217,9 @@ export type ExecutionDocument = ExecutionRecord & {
   brokerOrderStatus: string | null;
   brokerAccountId: string | null;
   brokerPositionConflict: boolean;
+  brokerReconciliationState?: "no_position" | "same_side_open" | "opposite_side_open" | "state_mismatch" | null;
+  reconciliationReason?: string | null;
+  noOp?: boolean;
   automationSettings: ExecutionAutomationSettings;
   validation: {
     tradeEligible: boolean;
@@ -185,6 +231,8 @@ export type ExecutionDocument = ExecutionRecord & {
   };
   orderRequest: AlpacaOrderRequest | null;
   orderResponse: AlpacaOrderResponse | null;
+  stopOrderId: string | null;
+  takeProfitOrderId: string | null;
   brokerSnapshot: {
     openPositionSymbols: string[];
   } | null;

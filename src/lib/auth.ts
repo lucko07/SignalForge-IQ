@@ -16,6 +16,7 @@ import {
   normalizeEmail,
 } from "./userProfiles";
 import { functions } from "./firebase";
+import { emailVerificationActionSettings } from "./authActionLinks";
 
 type ProfileBootstrapError = Error & {
   code: string;
@@ -112,7 +113,7 @@ export const signUp = async (
   }
 
   try {
-    await sendEmailVerification(credential.user);
+    await sendEmailVerification(credential.user, emailVerificationActionSettings);
     verificationEmailSent = true;
   } catch (error) {
     logBootstrapFailure("signup verification email failed", error, {
@@ -166,7 +167,7 @@ export const sendCurrentUserVerificationEmail = async () => {
     throw new Error("No authenticated user is available.");
   }
 
-  await sendEmailVerification(user);
+  await sendEmailVerification(user, emailVerificationActionSettings);
 };
 
 export const reloadCurrentUser = async () => {

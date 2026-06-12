@@ -11,17 +11,59 @@ type AdminPaperExecutionTarget = {
 };
 
 const isEligibleAutomationSettings = (settings: AutomationSettings) => (
-  settings.enabled === true
-  && settings.provider === "alpaca"
-  && settings.mode === "paper"
+  settings.enabled === true && (
+    (settings.provider === "alpaca" && settings.mode === "paper")
+    || settings.provider === "kraken"
+  )
 );
 
 const isEligibleBrokerConnection = (brokerConnection: BrokerConnection) => (
-  brokerConnection.provider === "alpaca"
-  && brokerConnection.mode === "paper"
-  && brokerConnection.connected === true
-  && brokerConnection.paperTradingEnabled === true
+  (
+    brokerConnection.provider === "alpaca"
+    && brokerConnection.mode === "paper"
+    && brokerConnection.connected === true
+    && brokerConnection.paperTradingEnabled === true
+  )
+  || (
+    brokerConnection.provider === "kraken"
+    && brokerConnection.mode === "paper"
+    && brokerConnection.connected === true
+    && brokerConnection.paperTradingEnabled === true
+  )
+  || (
+    brokerConnection.provider === "kraken"
+    && brokerConnection.mode === "live"
+  )
 );
+
+const getBrokerConnectionForProvider = async (
+  db: Firestore,
+  uid: string,
+  settings: AutomationSettings
+): Promise<BrokerConnection> => {
+  if (settings.provider !== "kraken") {
+    return getBrokerConnection(db, uid);
+  }
+
+  const snapshot = await db
+    .collection("users")
+    .doc(uid)
+    .collection("brokerConnections")
+    .doc("kraken")
+    .get();
+
+  const data = snapshot.exists ? snapshot.data() : null;
+
+  return {
+    provider: "kraken",
+    mode: data?.mode === "live" || settings.mode === "live" ? "live" : "paper",
+    connected: data?.connected === true,
+    lastValidatedAt: data?.lastValidatedAt ?? null,
+    paperTradingEnabled: settings.mode === "live" ? false : data?.paperTradingEnabled === true,
+    createdAt: data?.createdAt ?? null,
+    updatedAt: data?.updatedAt ?? null,
+  };
+};
 
 export const resolveAdminPaperExecutionTarget = async (
   db: Firestore
@@ -43,10 +85,8 @@ export const resolveAdminPaperExecutionTarget = async (
       continue;
     }
 
-    const [settings, brokerConnection] = await Promise.all([
-      getAutomationSettings(db, uid),
-      getBrokerConnection(db, uid),
-    ]);
+    const settings = await getAutomationSettings(db, uid);
+    const brokerConnection = await getBrokerConnectionForProvider(db, uid, settings);
 
     logger.info("Evaluated admin paper execution candidate.", {
       uid,

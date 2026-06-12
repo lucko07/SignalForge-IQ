@@ -15,6 +15,8 @@ import { db } from "./firebase";
 
 export type BrokerProvider = "alpaca";
 export type BrokerMode = "paper";
+export type ExecutionProvider = "alpaca" | "kraken";
+export type ExecutionMode = "paper" | "live";
 export type AutomationSizingMode = "fixed_notional";
 
 export type BrokerConnection = {
@@ -46,8 +48,8 @@ export type ExecutionRecord = {
   tradeId: string;
   signalId: string | null;
   uid: string | null;
-  provider: BrokerProvider;
-  mode: BrokerMode;
+  provider: ExecutionProvider;
+  mode: ExecutionMode;
   symbol: string;
   side: string;
   positionSide: string;
@@ -56,6 +58,10 @@ export type ExecutionRecord = {
   qty: string | null;
   notional: string | null;
   alpacaOrderId: string | null;
+  brokerOrderId: string | null;
+  brokerVenue: string | null;
+  brokerPair: string | null;
+  brokerAccountType: string | null;
   clientOrderId: string;
   status: string;
   submittedAt: unknown | null;
@@ -193,11 +199,9 @@ export const isAutomationSettings = (value: unknown): value is AutomationSetting
 export const isExecutionRecord = (value: unknown): value is ExecutionRecord => {
   const source = getObjectData(value);
 
-  return typeof source.tradeId === "string"
-    && typeof source.clientOrderId === "string"
-    && typeof source.symbol === "string"
-    && source.provider === "alpaca"
-    && source.mode === "paper";
+  return (source.provider === "alpaca" || source.provider === "kraken")
+    && (source.mode === "paper" || source.mode === "live")
+    && typeof source.status === "string";
 };
 
 const readDocumentData = async (reference: ReturnType<typeof doc>) => {
@@ -295,12 +299,12 @@ export const mapExecutionRecord = (
 
   return {
     id: snapshot.id,
-    tradeId: source.tradeId,
+    tradeId: typeof source.tradeId === "string" ? source.tradeId : snapshot.id,
     signalId: typeof source.signalId === "string" ? source.signalId : null,
     uid: typeof source.uid === "string" ? source.uid : null,
-    provider: "alpaca",
-    mode: "paper",
-    symbol: source.symbol,
+    provider: source.provider,
+    mode: source.mode,
+    symbol: typeof source.symbol === "string" ? source.symbol : "",
     side: typeof source.side === "string" ? source.side : "",
     positionSide: typeof source.positionSide === "string" ? source.positionSide : "",
     orderType: typeof source.orderType === "string" ? source.orderType : "",
@@ -308,8 +312,12 @@ export const mapExecutionRecord = (
     qty: typeof source.qty === "string" ? source.qty : null,
     notional: typeof source.notional === "string" ? source.notional : null,
     alpacaOrderId: typeof source.alpacaOrderId === "string" ? source.alpacaOrderId : null,
-    clientOrderId: source.clientOrderId,
-    status: typeof source.status === "string" ? source.status : "",
+    brokerOrderId: typeof source.brokerOrderId === "string" ? source.brokerOrderId : null,
+    brokerVenue: typeof source.brokerVenue === "string" ? source.brokerVenue : null,
+    brokerPair: typeof source.brokerPair === "string" ? source.brokerPair : null,
+    brokerAccountType: typeof source.brokerAccountType === "string" ? source.brokerAccountType : null,
+    clientOrderId: typeof source.clientOrderId === "string" ? source.clientOrderId : "",
+    status: source.status,
     submittedAt: source.submittedAt ?? null,
     filledAt: source.filledAt ?? null,
     canceledAt: source.canceledAt ?? null,

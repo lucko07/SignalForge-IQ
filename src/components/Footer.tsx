@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import BrandLogo from "./BrandLogo";
 import TradingDisclaimer from "./TradingDisclaimer";
 
 const footerLinks = [
@@ -13,9 +14,9 @@ function Footer() {
   return (
     <footer
       style={{
-        borderTop: "1px solid #d6d9e0",
+        borderTop: "1px solid var(--color-border)",
         marginTop: "2rem",
-        backgroundColor: "#f8fafc",
+        backgroundColor: "var(--color-surface-alt)",
       }}
     >
       <div
@@ -25,7 +26,7 @@ function Footer() {
           padding: "1.25rem 2rem",
           display: "grid",
           gap: "1rem",
-          color: "#475467",
+          color: "var(--color-text-muted)",
         }}
       >
         <div
@@ -37,7 +38,9 @@ function Footer() {
             alignItems: "center",
           }}
         >
-          <p style={{ margin: 0, fontWeight: 600 }}>SignalForge IQ</p>
+          <div style={footerBrandStyle}>
+            <BrandLogo variant="footer" />
+          </div>
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
             <p style={{ margin: 0 }}>Market education, signals, and account access.</p>
             <nav aria-label="Footer" style={{ display: "flex", gap: "0.85rem", flexWrap: "wrap" }}>
@@ -56,9 +59,15 @@ function Footer() {
 }
 
 const footerLinkStyle = {
-  color: "#475467",
+  color: "var(--color-text-muted)",
   textDecoration: "none",
   fontWeight: 600,
+};
+
+const footerBrandStyle = {
+  display: "flex",
+  alignItems: "center",
+  minHeight: "32px",
 };
 
 export default Footer;

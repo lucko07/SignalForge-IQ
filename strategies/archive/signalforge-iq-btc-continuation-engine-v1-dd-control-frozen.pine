@@ -1,0 +1,356 @@
+//@version=5
+// STATUS: FROZEN PAPER CANDIDATE
+// BENCHMARK:
+// Return +463.51%
+// Drawdown 33.77%
+// Profit Factor 3.088
+// Trades 24
+// BTCUSD Kraken 30m
+// Dec 31 2024 - Jun 12 2026
+// This file is read-only. Do not modify it.
+strategy("SignalForge IQ BTC Continuation Engine v1.0 DD Control", overlay=true, pyramiding=0, initial_capital=10000, commission_type=strategy.commission.percent, commission_value=0.10, slippage=2, process_orders_on_close=false, calc_on_order_fills=false, calc_on_every_tick=false)
+
+//====================================================
+// PRODUCT METADATA
+//====================================================
+productName = "BTC Continuation Engine"
+productCode = "btc_continuation_engine_v1"
+signalSource = "tradingview"
+engineName = "continuation"
+engineCode = "continuation_engine"
+strategyNameValue = "SignalForge IQ BTC Continuation Engine v1.0 DD Control"
+strategyVersionValue = "1.0-dd-control"
+marketStateValue = "qualified_continuation_setup"
+confidenceValue = "qualified"
+
+//====================================================
+// INPUTS
+//====================================================
+groupGeneral = "General"
+enableLongs = input.bool(true, "Enable Longs", group=groupGeneral)
+enableShorts = input.bool(true, "Enable Shorts", group=groupGeneral)
+rrMultiple = input.float(1.8, "Risk Reward Multiple", minval=1.0, step=0.1, group=groupGeneral)
+oneTradeAtATime = input.bool(true, "Only One Open Trade At A Time", group=groupGeneral)
+
+groupFrequency = "Frequency Controls"
+minBarsBetweenTrades = input.int(10, "Min Bars Between Trades", minval=5, maxval=50, step=1, group=groupFrequency)
+maxTradesPerDay = input.int(3, "Max Entries Per Trend", minval=1, maxval=10, group=groupFrequency)
+
+groupEMA = "EMA Settings"
+emaFastLen = input.int(20, "Fast EMA", minval=1, group=groupEMA)
+ema20Len = input.int(50, "Mid EMA", minval=1, group=groupEMA)
+ema21Len = input.int(200, "Slow EMA", minval=1, group=groupEMA)
+ema50Len = input.int(100, "Continuation Filter EMA", minval=1, group=groupEMA)
+ema200Len = input.int(200, "Macro Trend EMA", minval=100, group=groupEMA)
+
+groupCross = "Setup A Momentum Cross"
+crossStopLookback = input.int(6, "Swing Lookback", minval=3, maxval=20, group=groupCross)
+requireCrossCloseBeyondAll = input.bool(true, "Cross Candle Must Close Beyond EMAs", group=groupCross)
+requireEMA50SlopeForCross = input.bool(true, "Require EMA 50 Slope Filter", group=groupCross)
+minEMASlopePctLong = input.float(0.05, "Min EMA50 Slope % Long", minval=0.01, step=0.01, group=groupCross)
+minEMASlopePctShort = input.float(0.04, "Min EMA50 Slope % Short", minval=0.01, step=0.01, group=groupCross)
+
+groupPullback = "Setup B Pullback Continuation"
+clusterTightPct = input.float(0.25, "EMA Cluster Tightness %", minval=0.10, step=0.05, group=groupPullback)
+separationPctLong = input.float(0.40, "Cluster Separation From EMA50 % Long", minval=0.10, step=0.05, group=groupPullback)
+separationPctShort = input.float(0.20, "Cluster Separation From EMA50 % Short", minval=0.10, step=0.05, group=groupPullback)
+touchLookback = input.int(5, "Touch Lookback Bars", minval=3, maxval=10, group=groupPullback)
+requireCloseBackThroughCluster = input.bool(true, "Require Reclaim/Reject Close Through Cluster", group=groupPullback)
+minBarsInPullback = input.int(3, "Min Bars in Pullback", minval=2, maxval=6, group=groupPullback)
+
+groupHTF = "Optional HTF Filter"
+useHTFFilter = input.bool(false, "Use HTF Filter", group=groupHTF)
+htfTf = input.timeframe("240", "HTF Timeframe", group=groupHTF)
+htfEmaLen = input.int(50, "HTF EMA Length", minval=1, group=groupHTF)
+
+groupSession = "Session Filter"
+useSessionFilter = input.bool(false, "Use Session Filter", group=groupSession)
+sessionInput = input.session("0000-2359", "Allowed Session", group=groupSession)
+
+groupRisk = "Risk Management"
+useTrailingStop = input.bool(false, "Use Structure Trail", group=groupRisk)
+trailOffsetPct = input.float(0.15, "Stop Buffer ATR", minval=0.01, step=0.01, group=groupRisk)
+trailAmountPct = input.float(0.15, "EMA Zone Touch ATR", minval=0.01, step=0.01, group=groupRisk)
+useAtrStop = input.bool(false, "Use ATR Stop Overlay", group=groupRisk)
+atrLength = input.int(14, "ATR Length", minval=1, group=groupRisk)
+atrStopMult = input.float(2.0, "ATR Stop Multiplier", minval=0.1, step=0.1, group=groupRisk)
+useRiskSizing = input.bool(false, "Use Risk-Based Position Sizing", group=groupRisk)
+riskPctEquity = input.float(1.0, "Risk % of Equity", minval=0.1, step=0.1, group=groupRisk)
+
+groupOptionalRisk = "Optional Risk Modules"
+useVolatilityFilter = input.bool(false, "Use Volatility Expansion Filter", group=groupOptionalRisk)
+atrBaselineLength = input.int(50, "ATR Baseline Length", minval=1, group=groupOptionalRisk)
+minAtrExpansion = input.float(1.0, "Minimum ATR Expansion", minval=0.1, step=0.05, group=groupOptionalRisk)
+useLossCooldown = input.bool(false, "Use Cooldown After Loss", group=groupOptionalRisk)
+lossCooldownBars = input.int(12, "Loss Cooldown Bars", minval=1, group=groupOptionalRisk)
+
+groupChop = "Chop Filter"
+useChopFilter = input.bool(true, "Use ADX Chop Filter", group=groupChop)
+adxLen = input.int(14, "ADX Length", group=groupChop)
+adxThreshold = input.int(18, "Min ADX", minval=15, maxval=30, group=groupChop)
+
+groupVisual = "Visual"
+showLabels = input.bool(true, "Show Labels", group=groupVisual)
+showDebug = input.bool(false, "Show Debug", group=groupVisual)
+
+groupAlert = "Alert Settings"
+strategyTagInput = input.string("SFIQ BTC Con", "Strategy Tag", group=groupAlert)
+productAssetInput = input.string("BTC", "Product Asset", group=groupAlert)
+marketTypeInput = input.string("crypto", "Market Type", options=["crypto", "stock", "forex", "futures"], group=groupAlert)
+webhookVersionInput = input.string("v1", "Webhook Version", group=groupAlert)
+
+//====================================================
+// CORE SERIES
+//====================================================
+ema9 = ta.ema(close, emaFastLen)
+ema20 = ta.ema(close, ema20Len)
+ema21 = ta.ema(close, ema21Len)
+ema50 = ta.ema(close, ema50Len)
+ema200 = ta.ema(close, ema200Len)
+atr = ta.atr(atrLength)
+
+[plusDI, minusDI, adx] = ta.dmi(adxLen, adxLen)
+isTrending = not useChopFilter or adx >= adxThreshold
+
+ema50SlopePct = (ema50 - ema50[1]) / ema50[1] * 100.0
+strongSlopeUp = ema50 > ema50[1] and ema50SlopePct >= minEMASlopePctLong
+strongSlopeDown = ema50 < ema50[1] and ema50SlopePct <= -minEMASlopePctShort
+
+inSession = not useSessionFilter or not na(time(timeframe.period, sessionInput))
+canTrade = not oneTradeAtATime or strategy.position_size == 0
+
+htfClosePrev = request.security(syminfo.tickerid, htfTf, close[1], lookahead=barmerge.lookahead_off)
+htfEmaPrev = request.security(syminfo.tickerid, htfTf, ta.ema(close, htfEmaLen)[1], lookahead=barmerge.lookahead_off)
+
+allowHTFLong = not useHTFFilter or htfClosePrev > htfEmaPrev
+allowHTFShort = not useHTFFilter or htfClosePrev < htfEmaPrev
+
+atrBaseline = ta.sma(atr, atrBaselineLength)
+volatilityOk = not useVolatilityFilter or atr > atrBaseline * minAtrExpansion
+
+var int barsSinceLastTrade = 0
+var int tradesToday = 0
+var int lastTradeDay = 0
+var int lastClosedTradeCount = 0
+var int lossCooldownUntilBar = na
+
+currentDay = dayofmonth(time)
+if currentDay != lastTradeDay
+    tradesToday := 0
+    lastTradeDay := currentDay
+
+barsSinceLastTrade += 1
+
+closedTradeCount = strategy.closedtrades
+if closedTradeCount > lastClosedTradeCount
+    lastClosedTradeIndex = closedTradeCount - 1
+    lastClosedTradeProfit = strategy.closedtrades.profit(lastClosedTradeIndex)
+    if useLossCooldown and lastClosedTradeProfit < 0
+        lossCooldownUntilBar := bar_index + lossCooldownBars
+    lastClosedTradeCount := closedTradeCount
+
+cooldownActive = useLossCooldown and not na(lossCooldownUntilBar) and bar_index < lossCooldownUntilBar
+
+//====================================================
+// STRUCTURE
+//====================================================
+clusterTop = math.max(ema9, math.max(ema20, ema21))
+clusterBottom = math.min(ema9, math.min(ema20, ema21))
+clusterWidth = clusterTop - clusterBottom
+
+clusterTight = close != 0 ? (clusterWidth / close) * 100.0 <= clusterTightPct : false
+
+sepLongPct = close != 0 ? ((clusterBottom - ema50) / close) * 100.0 : 0.0
+sepShortPct = close != 0 ? ((ema50 - clusterTop) / close) * 100.0 : 0.0
+
+separatedFrom50Long = sepLongPct >= separationPctLong
+separatedFrom50Short = sepShortPct >= separationPctShort
+
+trendStackUp = ema9 > ema20 and ema9 > ema21 and ema20 > ema50 and ema21 > ema50
+trendStackDown = ema9 < ema20 and ema9 < ema21 and ema20 < ema50 and ema21 < ema50
+
+aboveMacroTrend = close > ema200
+belowMacroTrend = close < ema200
+
+//====================================================
+// SETUP A: MOMENTUM CROSS
+//====================================================
+priceCrossUp = ta.crossover(close, ema50)
+fastCrossUp = ta.crossover(ema9, ema21)
+crossUpBar = (priceCrossUp or fastCrossUp) and ema9 > ema20
+
+priceCrossDown = ta.crossunder(close, ema50)
+fastCrossDown = ta.crossunder(ema9, ema21)
+crossDownBar = (priceCrossDown or fastCrossDown) and ema9 < ema20
+
+crossCloseValidLong = not requireCrossCloseBeyondAll or (close > ema9 and close > ema20 and close > ema21 and close > ema50)
+crossCloseValidShort = not requireCrossCloseBeyondAll or (close < ema9 and close < ema20 and close < ema21 and close < ema50)
+
+crossSlopeValidLong = not requireEMA50SlopeForCross or strongSlopeUp
+crossSlopeValidShort = not requireEMA50SlopeForCross or strongSlopeDown
+
+crossLongSignal = enableLongs and inSession and canTrade and volatilityOk and not cooldownActive and allowHTFLong and crossUpBar and crossCloseValidLong and crossSlopeValidLong and isTrending and aboveMacroTrend
+crossShortSignal = enableShorts and inSession and canTrade and volatilityOk and not cooldownActive and allowHTFShort and crossDownBar and crossCloseValidShort and crossSlopeValidShort and isTrending and belowMacroTrend
+
+//====================================================
+// SETUP B: PULLBACK CONTINUATION
+//====================================================
+touchClusterLongRaw = low <= clusterTop and high >= clusterBottom
+touchClusterShortRaw = high >= clusterBottom and low <= clusterTop
+
+barsSinceLongTouch = ta.barssince(touchClusterLongRaw)
+barsSinceShortTouch = ta.barssince(touchClusterShortRaw)
+
+recentTouchLong = barsSinceLongTouch >= 0 and barsSinceLongTouch <= touchLookback
+recentTouchShort = barsSinceShortTouch >= 0 and barsSinceShortTouch <= touchLookback
+
+pullbackDurationLong = trendStackUp and barsSinceLongTouch >= minBarsInPullback
+pullbackDurationShort = trendStackDown and barsSinceShortTouch >= minBarsInPullback
+
+reclaimLong = close > ema9 and close > ema20 and close > ema21
+rejectShort = close < ema9 and close < ema20 and close < ema21
+
+pullbackCloseValidLong = not requireCloseBackThroughCluster or reclaimLong
+pullbackCloseValidShort = not requireCloseBackThroughCluster or rejectShort
+
+pullbackLongSignal = enableLongs and inSession and canTrade and volatilityOk and not cooldownActive and allowHTFLong and trendStackUp and clusterTight and separatedFrom50Long and recentTouchLong and pullbackCloseValidLong and pullbackDurationLong and isTrending and aboveMacroTrend
+pullbackShortSignal = enableShorts and inSession and canTrade and volatilityOk and not cooldownActive and allowHTFShort and trendStackDown and clusterTight and separatedFrom50Short and recentTouchShort and pullbackCloseValidShort and pullbackDurationShort and isTrending and belowMacroTrend
+
+finalLongSignal = (crossLongSignal or pullbackLongSignal) and barsSinceLastTrade >= minBarsBetweenTrades and tradesToday < maxTradesPerDay and barstate.isconfirmed
+finalShortSignal = (crossShortSignal or pullbackShortSignal) and barsSinceLastTrade >= minBarsBetweenTrades and tradesToday < maxTradesPerDay and barstate.isconfirmed
+
+longSetupName = crossLongSignal ? "momentum_cross" : "pullback_continuation"
+shortSetupName = crossShortSignal ? "momentum_cross" : "pullback_continuation"
+
+//====================================================
+// RISK MODEL
+//====================================================
+crossLongStop = ta.lowest(low, crossStopLookback)
+crossShortStop = ta.highest(high, crossStopLookback)
+
+pullbackLongStop = ta.lowest(low, 5)
+pullbackShortStop = ta.highest(high, 5)
+
+rawLongStop = crossLongSignal ? crossLongStop : pullbackLongStop
+rawShortStop = crossShortSignal ? crossShortStop : pullbackShortStop
+
+structureLongStop = math.min(rawLongStop, low)
+structureShortStop = math.max(rawShortStop, high)
+atrLongStop = close - atr * atrStopMult
+atrShortStop = close + atr * atrStopMult
+longStop = useAtrStop ? math.max(structureLongStop, atrLongStop) : structureLongStop
+shortStop = useAtrStop ? math.min(structureShortStop, atrShortStop) : structureShortStop
+
+longRisk = close - longStop
+shortRisk = shortStop - close
+
+validLongRisk = longRisk > syminfo.mintick * 10
+validShortRisk = shortRisk > syminfo.mintick * 10
+
+longTarget = close + longRisk * rrMultiple
+shortTarget = close - shortRisk * rrMultiple
+riskDollars = strategy.equity * riskPctEquity / 100.0
+longQty = useRiskSizing and validLongRisk ? riskDollars / longRisk : na
+shortQty = useRiskSizing and validShortRisk ? riskDollars / shortRisk : na
+
+//====================================================
+// TRADE STATE
+//====================================================
+var string activeTradeId = na
+var string activeSetup = na
+var string activeSide = na
+var float activeStop = na
+var float activeTarget = na
+
+newEventTime = str.tostring(time)
+newLongTradeId = "SFIQ_BTC_LONG_" + newEventTime
+newShortTradeId = "SFIQ_BTC_SHORT_" + newEventTime
+
+exitEventIdLong = na(activeTradeId) ? "SFIQ_BTC_LONG_EXIT_" + newEventTime : activeTradeId + "_EXIT_" + newEventTime
+exitEventIdShort = na(activeTradeId) ? "SFIQ_BTC_SHORT_EXIT_" + newEventTime : activeTradeId + "_EXIT_" + newEventTime
+
+//====================================================
+// ALERT PAYLOAD BUILDERS
+//====================================================
+
+buildEntryJson(_eventId, _side, _setup, _entryPrice, _stopPrice, _targetPrice, _rrPlanned) => "{\"event\":\"entry\",\"eventType\":\"signal.entry\",\"automationTag\":\"" + strategyNameValue + "\",\"product\":\"" + productName + "\",\"productCode\":\"" + productCode + "\",\"engine\":\"" + engineName + "\",\"engineCode\":\"" + engineCode + "\",\"strategyName\":\"" + strategyNameValue + "\",\"strategyVersion\":\"" + strategyVersionValue + "\",\"symbol\":\"" + syminfo.ticker + "\",\"tickerId\":\"" + syminfo.tickerid + "\",\"timeframe\":\"" + timeframe.period + "\",\"barTime\":" + str.tostring(time) + ",\"side\":\"" + _side + "\",\"entryPrice\":" + str.tostring(_entryPrice, format.mintick) + ",\"stopPrice\":" + str.tostring(_stopPrice, format.mintick) + ",\"targetPrice\":" + str.tostring(_targetPrice, format.mintick) + ",\"rrPlanned\":" + str.tostring(_rrPlanned) + ",\"eventId\":\"" + _eventId + "\",\"signalId\":\"" + _eventId + "\",\"tradeId\":\"" + _eventId + "\",\"marketState\":\"" + marketStateValue + "\",\"confidence\":\"" + confidenceValue + "\",\"source\":\"" + signalSource + "\"}"
+
+buildExitJson(_eventId, _tradeId, _side, _setup, _stopPrice, _targetPrice) => "{\"event\":\"exit\",\"eventType\":\"signal.exit\",\"automationTag\":\"" + strategyNameValue + "\",\"product\":\"" + productName + "\",\"productCode\":\"" + productCode + "\",\"engine\":\"" + engineName + "\",\"engineCode\":\"" + engineCode + "\",\"strategyName\":\"" + strategyNameValue + "\",\"strategyVersion\":\"" + strategyVersionValue + "\",\"symbol\":\"" + syminfo.ticker + "\",\"tickerId\":\"" + syminfo.tickerid + "\",\"timeframe\":\"" + timeframe.period + "\",\"barTime\":" + str.tostring(time) + ",\"side\":\"" + _side + "\",\"stopPrice\":" + str.tostring(_stopPrice, format.mintick) + ",\"targetPrice\":" + str.tostring(_targetPrice, format.mintick) + ",\"exitPrice\":\"{{strategy.order.price}}\",\"eventId\":\"" + _eventId + "\",\"signalId\":\"" + _eventId + "\",\"tradeId\":\"" + _tradeId + "\",\"marketState\":\"" + marketStateValue + "\",\"confidence\":\"" + confidenceValue + "\",\"source\":\"" + signalSource + "\"}"
+
+//====================================================
+// ENTRY / EXIT EXECUTION
+//====================================================
+trailPointsLong = math.round(trailAmountPct / 100 * close / syminfo.mintick) * syminfo.mintick
+trailOffsetLong = math.round(trailOffsetPct / 100 * close / syminfo.mintick) * syminfo.mintick
+trailPointsShort = math.round(trailAmountPct / 100 * close / syminfo.mintick) * syminfo.mintick
+trailOffsetShort = math.round(trailOffsetPct / 100 * close / syminfo.mintick) * syminfo.mintick
+
+if finalLongSignal and validLongRisk and strategy.position_size == 0
+    activeTradeId := newLongTradeId
+    activeSetup := longSetupName
+    activeSide := "long"
+    activeStop := longStop
+    activeTarget := longTarget
+    longEntryJson = buildEntryJson(activeTradeId, "long", activeSetup, close, activeStop, activeTarget, rrMultiple)
+    longExitJson = buildExitJson(activeTradeId + "_EXIT_" + newEventTime, activeTradeId, "long", activeSetup, activeStop, activeTarget)
+    if useRiskSizing
+        strategy.entry("LONG", strategy.long, qty=longQty, alert_message=longEntryJson)
+    else
+        strategy.entry("LONG", strategy.long, alert_message=longEntryJson)
+
+    if useTrailingStop
+        strategy.exit("LONG_EXIT", from_entry="LONG", stop=activeStop, limit=activeTarget, trail_points=trailPointsLong, trail_offset=trailOffsetLong, alert_message=longExitJson)
+    else
+        strategy.exit("LONG_EXIT", from_entry="LONG", stop=activeStop, limit=activeTarget, alert_message=longExitJson)
+    barsSinceLastTrade := 0
+    tradesToday += 1
+
+if finalShortSignal and validShortRisk and strategy.position_size == 0
+    activeTradeId := newShortTradeId
+    activeSetup := shortSetupName
+    activeSide := "short"
+    activeStop := shortStop
+    activeTarget := shortTarget
+    shortEntryJson = buildEntryJson(activeTradeId, "short", activeSetup, close, activeStop, activeTarget, rrMultiple)
+    shortExitJson = buildExitJson(activeTradeId + "_EXIT_" + newEventTime, activeTradeId, "short", activeSetup, activeStop, activeTarget)
+    if useRiskSizing
+        strategy.entry("SHORT", strategy.short, qty=shortQty, alert_message=shortEntryJson)
+    else
+        strategy.entry("SHORT", strategy.short, alert_message=shortEntryJson)
+
+    if useTrailingStop
+        strategy.exit("SHORT_EXIT", from_entry="SHORT", stop=activeStop, limit=activeTarget, trail_points=trailPointsShort, trail_offset=trailOffsetShort, alert_message=shortExitJson)
+    else
+        strategy.exit("SHORT_EXIT", from_entry="SHORT", stop=activeStop, limit=activeTarget, alert_message=shortExitJson)
+    barsSinceLastTrade := 0
+    tradesToday += 1
+
+justClosedLong = strategy.position_size == 0 and strategy.position_size[1] > 0
+justClosedShort = strategy.position_size == 0 and strategy.position_size[1] < 0
+
+if justClosedLong or justClosedShort
+    activeTradeId := na
+    activeSetup := na
+    activeSide := na
+    activeStop := na
+    activeTarget := na
+
+//====================================================
+// VISUALS
+//====================================================
+plot(ema9, "EMA 9", color=color.aqua, linewidth=2)
+plot(ema20, "EMA 20", color=color.orange, linewidth=2)
+plot(ema21, "EMA 21", color=color.yellow, linewidth=2)
+plot(ema50, "EMA 50", color=color.fuchsia, linewidth=2)
+plot(ema200, "EMA 200", color=color.white, linewidth=2, style=plot.style_stepline)
+
+plotshape(showDebug and crossLongSignal, title="Cross Long", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny, text="XL")
+plotshape(showDebug and crossShortSignal, title="Cross Short", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny, text="XS")
+plotshape(showDebug and pullbackLongSignal and not crossLongSignal, title="Pullback Long", style=shape.circle, location=location.belowbar, color=color.green, size=size.tiny, text="PL")
+plotshape(showDebug and pullbackShortSignal and not crossShortSignal, title="Pullback Short", style=shape.circle, location=location.abovebar, color=color.maroon, size=size.tiny, text="PS")
+
+if showLabels and finalLongSignal and validLongRisk and strategy.position_size == 0
+    label.new(bar_index, low, "LONG\n" + longSetupName + "\nSL: " + str.tostring(longStop, format.mintick) + "\nTP: " + str.tostring(longTarget, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white)
+
+if showLabels and finalShortSignal and validShortRisk and strategy.position_size == 0
+    label.new(bar_index, high, "SHORT\n" + shortSetupName + "\nSL: " + str.tostring(shortStop, format.mintick) + "\nTP: " + str.tostring(shortTarget, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white)

@@ -38,4 +38,5 @@ export const getExecutionAutomationSettings = (): ExecutionAutomationSettings =>
   sizingMode: "fixed_notional",
   notionalUsd: toPositiveNumber(process.env.ALPACA_PAPER_DEFAULT_NOTIONAL_USD, DEFAULT_NOTIONAL_USD),
   killSwitch: false,
+  allowUnprotectedMarketEntry: toBoolean(process.env.ALPACA_PAPER_ALLOW_UNPROTECTED_MARKET_ENTRY, false),
 });

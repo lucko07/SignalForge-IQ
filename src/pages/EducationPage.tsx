@@ -1,3 +1,4 @@
+import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import EducationVideoSection from "../components/EducationVideoSection";
 import howTradingSignalsWorkImage from "../assets/education/How_A_Trading_signal_work.png";
@@ -87,6 +88,13 @@ const membershipCards = [
 function EducationPage() {
   return (
     <section style={pageStyle}>
+      <Helmet>
+        <title>How Trading Signals Work | Learn Trading Systems | SignalForge IQ</title>
+        <meta
+          name="description"
+          content="Learn how trading signals work, risk management strategies, and how SignalForge IQ tracks performance automatically."
+        />
+      </Helmet>
       <div style={heroShellStyle}>
         <div style={heroTextColumnStyle}>
           <p style={eyebrowStyle}>Trading Education</p>
@@ -226,6 +234,25 @@ function EducationPage() {
       </article>
 
       <article style={sectionCardStyle}>
+        <div style={sectionContentStyle}>
+          <p style={sectionEyebrowStyle}>Performance Review</p>
+          <h2 style={sectionTitleStyle}>Tracking outcomes is part of trading education</h2>
+          <p style={sectionDescriptionStyle}>
+            Traders build more confidence when they can review what happened after the alert, not just when the signal
+            first appeared. Performance tracking helps connect structure, execution, and risk discipline in one place.
+          </p>
+          <div style={guideLinkRowStyle}>
+            <Link to="/track-trading-performance" style={guideLinkStyle}>
+              Read the performance tracking guide
+            </Link>
+            <Link to="/signals" style={guideMutedLinkStyle}>
+              See the public signals preview
+            </Link>
+          </div>
+        </div>
+      </article>
+
+      <article style={sectionCardStyle}>
         <div style={twoColumnSectionStyle}>
           <div style={sectionContentStyle}>
             <p style={sectionEyebrowStyle}>Access Tiers</p>
@@ -271,7 +298,7 @@ const heroShellStyle = {
   gap: "1.25rem",
   padding: "2rem",
   borderRadius: "28px",
-  border: "1px solid #d0d5dd",
+  border: "1px solid var(--color-hero-border)",
   background:
     "linear-gradient(135deg, rgba(16,24,40,1) 0%, rgba(29,41,57,1) 56%, rgba(71,84,103,1) 100%)",
   color: "#ffffff",
@@ -370,9 +397,9 @@ const sectionCardStyle = {
   gap: "1.25rem",
   padding: "1.5rem",
   borderRadius: "24px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-  boxShadow: "0 10px 30px rgba(16, 24, 40, 0.05)",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
+  boxShadow: "var(--shadow-soft)",
 };
 
 const twoColumnSectionStyle = {
@@ -397,14 +424,14 @@ const sectionImageStyle = {
   maxHeight: "420px",
   objectFit: "cover" as const,
   borderRadius: "20px",
-  border: "1px solid #eaecf0",
+  border: "1px solid var(--color-border)",
   display: "block",
-  backgroundColor: "#f8fafc",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 const sectionEyebrowStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   fontWeight: 700,
   letterSpacing: "0.06em",
   textTransform: "uppercase" as const,
@@ -413,13 +440,13 @@ const sectionEyebrowStyle = {
 
 const sectionTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.7rem",
 };
 
 const sectionDescriptionStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.72,
 };
 
@@ -434,19 +461,19 @@ const infoCardStyle = {
   gap: "0.45rem",
   padding: "1rem",
   borderRadius: "16px",
-  border: "1px solid #eaecf0",
-  backgroundColor: "#f8fafc",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 const infoCardTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1rem",
 };
 
 const infoCardDescriptionStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.6,
 };
 
@@ -461,14 +488,14 @@ const checkListItemStyle = {
   alignItems: "flex-start",
   padding: "0.9rem 1rem",
   borderRadius: "14px",
-  backgroundColor: "#f8fafc",
-  border: "1px solid #eaecf0",
-  color: "#344054",
+  backgroundColor: "var(--color-surface-alt)",
+  border: "1px solid var(--color-border)",
+  color: "var(--color-button-secondary-text)",
   lineHeight: 1.6,
 };
 
 const checkIconStyle = {
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontWeight: 800,
   lineHeight: 1.2,
 };
@@ -497,8 +524,8 @@ const timelineMarkerStyle = {
   borderRadius: "999px",
   display: "grid",
   placeItems: "center",
-  backgroundColor: "#101828",
-  color: "#ffffff",
+  backgroundColor: "var(--color-button-primary)",
+  color: "var(--color-button-primary-text)",
   fontWeight: 700,
   fontSize: "0.85rem",
 };
@@ -506,7 +533,7 @@ const timelineMarkerStyle = {
 const timelineLineStyle = {
   width: "2px",
   height: "100%",
-  backgroundColor: "#d0d5dd",
+  backgroundColor: "var(--color-border-strong)",
   borderRadius: "999px",
 };
 
@@ -522,13 +549,32 @@ const membershipGridStyle = {
   gap: "0.9rem",
 };
 
+const guideLinkRowStyle = {
+  display: "flex",
+  gap: "1rem",
+  flexWrap: "wrap" as const,
+  alignItems: "center",
+};
+
+const guideLinkStyle = {
+  textDecoration: "none",
+  color: "var(--color-info-text)",
+  fontWeight: 700,
+};
+
+const guideMutedLinkStyle = {
+  textDecoration: "none",
+  color: "var(--color-text-muted)",
+  fontWeight: 700,
+};
+
 const membershipCardStyle = {
   display: "grid",
   gap: "0.45rem",
   padding: "1rem",
   borderRadius: "16px",
-  border: "1px solid #eaecf0",
-  backgroundColor: "#f8fafc",
+  border: "1px solid var(--color-border)",
+  backgroundColor: "var(--color-surface-alt)",
 };
 
 export default EducationPage;

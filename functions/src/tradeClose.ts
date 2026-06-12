@@ -1,9 +1,14 @@
 import { FieldValue, Timestamp, type DocumentData, type DocumentReference, type Firestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
-import { TRADES_COLLECTION_NAME } from "./tradeSync.js";
+import {
+  buildClosedTradePatch,
+  getCanonicalTradeStatus,
+  type ClosedTradeOutcome,
+} from "./tradeLifecycle.js";
+
+const TRADES_COLLECTION_NAME = "trades";
 
 type TradeSide = "long" | "short";
-type TradeResult = "open" | "win" | "loss" | "breakeven";
 
 type CloseTradeParams = {
   db: Firestore;
@@ -20,7 +25,7 @@ type CloseComputation = {
   rrActual: number;
   pnlPercent: number;
   pnlDollar: number | null;
-  result: Exclude<TradeResult, "open">;
+  result: ClosedTradeOutcome;
   closeReason: string;
   quantity: number | null;
   pnlPerShare: number;
@@ -83,13 +88,14 @@ const toTimestamp = (value: unknown) => {
 };
 
 const roundTo = (value: number, decimals: number) => Number(value.toFixed(decimals));
+const BREAKEVEN_EPSILON = 0.000001;
 
 const classifyTradeResult = (
   side: TradeSide,
   exitPrice: number,
   stopPrice: number,
   targetPrice: number
-): Exclude<TradeResult, "open"> => {
+): ClosedTradeOutcome => {
   if (side === "long") {
     if (exitPrice >= targetPrice) {
       return "win";
@@ -111,6 +117,23 @@ const classifyTradeResult = (
   }
 
   return "breakeven";
+};
+
+const classifyOutcomeByEntryExit = (
+  side: TradeSide,
+  entryPrice: number,
+  exitPrice: number
+): ClosedTradeOutcome => {
+  const delta = exitPrice - entryPrice;
+  if (Math.abs(delta) <= BREAKEVEN_EPSILON) {
+    return "breakeven";
+  }
+
+  if (side === "long") {
+    return delta > 0 ? "win" : "loss";
+  }
+
+  return delta < 0 ? "win" : "loss";
 };
 
 const buildCloseComputation = (
@@ -288,15 +311,17 @@ export const closeTrade = async ({
     });
 
     transaction.update(tradeReference, {
-      exitPrice: computation.exitPrice,
-      exitTime: computation.exitTime,
-      rrActual: computation.rrActual,
-      pnlPercent: computation.pnlPercent,
-      pnlDollar: computation.pnlDollar,
-      result: computation.result,
-      status: "closed",
-      closeReason: computation.closeReason,
-      updatedAt: FieldValue.serverTimestamp(),
+      ...buildClosedTradePatch({
+        result: computation.result,
+        extra: {
+          exitPrice: computation.exitPrice,
+          exitTime: computation.exitTime,
+          rrActual: computation.rrActual,
+          pnlPercent: computation.pnlPercent,
+          pnlDollar: computation.pnlDollar,
+          closeReason: computation.closeReason,
+        },
+      }),
     });
 
     return {
@@ -313,6 +338,113 @@ export const closeTrade = async ({
   if (result.status === "closed") {
     logger.info("Trade closed successfully.", result);
   }
+
+  return result;
+};
+
+export const closeTradeFromBrokerReconciliation = async ({
+  db,
+  tradeId,
+  signalId,
+  exitPrice,
+  exitTime,
+  closeReason,
+}: {
+  db: Firestore;
+  tradeId: string;
+  signalId?: string | null;
+  exitPrice?: number | null;
+  exitTime?: Timestamp | Date | string | null;
+  closeReason: "synthetic_oco_stop_filled" | "synthetic_oco_take_profit_filled" | "broker_flat_reconciled";
+}) => {
+  const tradeReference = await findTradeReference(db, tradeId, signalId ?? undefined);
+  if (!tradeReference) {
+    return { status: "not-found" as const };
+  }
+
+  const parsedExitTime = toTimestamp(exitTime);
+  const resolvedExitTime = parsedExitTime ?? Timestamp.now();
+  const exitTimeFieldValue = parsedExitTime ?? FieldValue.serverTimestamp();
+  const normalizedExitPrice = toNumber(exitPrice);
+
+  const result = await db.runTransaction(async (transaction) => {
+    const tradeSnapshot = await transaction.get(tradeReference);
+    if (!tradeSnapshot.exists) {
+      return { status: "not-found" as const };
+    }
+
+    const trade = tradeSnapshot.data() as DocumentData;
+    const currentStatus = getCanonicalTradeStatus(trade);
+    if (currentStatus === "closed") {
+      return {
+        status: "already-closed" as const,
+        tradeId: tradeReference.id,
+        signalId: (trade.signalId as string | null | undefined) ?? signalId ?? null,
+      };
+    }
+
+    if (currentStatus === "rejected" || currentStatus === "not_executed" || currentStatus === "error") {
+      return {
+        status: "ignored-terminal" as const,
+        tradeId: tradeReference.id,
+      };
+    }
+
+    const side = trade.side as TradeSide | undefined;
+    const entryPrice = toNumber(trade.entryPrice);
+    const riskPerShare = toNumber(trade.riskPerShare);
+    const quantity = toNumber(trade.quantity ?? trade.shares ?? trade.qty);
+    const resolvedExitPrice = normalizedExitPrice ?? toNumber(trade.exitPrice) ?? toNumber(trade.filledAvgPrice);
+
+    if (!side || !entryPrice || !resolvedExitPrice) {
+      throw new Error("Unable to reconcile close without side/entry/exit prices.");
+    }
+
+    const pnlPerShare = side === "short" ? entryPrice - resolvedExitPrice : resolvedExitPrice - entryPrice;
+    const pnlPercent = roundTo((pnlPerShare / entryPrice) * 100, 2);
+    const pnlDollar = quantity === null ? null : roundTo(pnlPerShare * quantity, 2);
+    const rrActual = riskPerShare && riskPerShare > 0 ? roundTo(pnlPerShare / riskPerShare, 2) : null;
+    const outcome = classifyOutcomeByEntryExit(side, entryPrice, resolvedExitPrice);
+    const tradeSignalId = (trade.signalId as string | null | undefined) ?? signalId ?? null;
+
+    transaction.update(tradeReference, buildClosedTradePatch({
+        result: outcome,
+        executionStatus: "closed",
+        extra: {
+          exitPrice: resolvedExitPrice,
+          exitTime: exitTimeFieldValue,
+          closeReason,
+          protectionStatus: "completed",
+          ...(rrActual === null ? {} : { rrActual }),
+          pnlPercent,
+        ...(pnlDollar === null ? {} : { pnlDollar }),
+      },
+    }));
+
+    if (tradeSignalId) {
+      const signalReference = db.collection("signals").doc(tradeSignalId);
+      transaction.set(signalReference, {
+        status: "CLOSED",
+        reviewStatus: "CLOSED",
+        tradeResult: outcome,
+        executionStatus: "closed",
+        closedAt: parsedExitTime ?? FieldValue.serverTimestamp(),
+        statusUpdatedAt: FieldValue.serverTimestamp(),
+        statusUpdatedBy: "broker-reconciliation",
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    return {
+      status: "closed" as const,
+      tradeId: tradeReference.id,
+      signalId: tradeSignalId,
+      outcome,
+      exitPrice: resolvedExitPrice,
+      exitTime: resolvedExitTime.toDate().toISOString(),
+      closeReason,
+    };
+  });
 
   return result;
 };

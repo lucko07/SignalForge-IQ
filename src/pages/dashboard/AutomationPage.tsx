@@ -15,10 +15,8 @@ import {
   type ExecutionRecord,
 } from "../../lib/automationFirestore";
 import {
-  runAdminPaperExecutionTest,
   saveAlpacaPaperAutomationSettings,
   testAlpacaConnection as runAlpacaConnectionTest,
-  type RunAdminPaperExecutionTestResponse,
 } from "../../lib/alpacaAutomation";
 import { db } from "../../lib/firebase";
 import { canUseAutomation, getEffectiveManagedPlan } from "../../lib/userProfiles";
@@ -115,12 +113,7 @@ function AutomationPage() {
   const [isTestingAlpacaConnection, setIsTestingAlpacaConnection] = useState(false);
   const [isSavingAlpacaSettings, setIsSavingAlpacaSettings] = useState(false);
   const [alpacaStatusMessage, setAlpacaStatusMessage] = useState<NoticeState>(null);
-  const [paperTestNotice, setPaperTestNotice] = useState<NoticeState>(null);
-  const [isRunningPaperTest, setIsRunningPaperTest] = useState(false);
   const [executionFilter, setExecutionFilter] = useState<ExecutionFilter>("all");
-  const [latestPaperTestResult, setLatestPaperTestResult] =
-    useState<RunAdminPaperExecutionTestResponse | null>(null);
-  const [lastSuccessfulPaperTestAt, setLastSuccessfulPaperTestAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) {
@@ -191,8 +184,6 @@ function AutomationPage() {
           setAlpacaSettings(getDefaultAutomationSettings());
           setAlpacaFormState(createAlpacaSettingsFormState(getDefaultAutomationSettings()));
           setExecutionRecords([]);
-          setLatestPaperTestResult(null);
-          setLastSuccessfulPaperTestAt(null);
         }
       } catch (error) {
         if (!isMounted) {
@@ -237,8 +228,7 @@ function AutomationPage() {
   }, [isAdmin, normalizedPlan]);
 
   const isSaveDisabled = isSaving || (!isAdmin && !hasAutomationAccess);
-  const areAdminPaperActionsDisabled =
-    isRunningPaperTest || isTestingAlpacaConnection || isSavingAlpacaSettings;
+  const areAdminPaperActionsDisabled = isTestingAlpacaConnection || isSavingAlpacaSettings;
   const executionSummary = useMemo(
     () => summarizeExecutionStatuses(executionRecords),
     [executionRecords]
@@ -301,68 +291,6 @@ function AutomationPage() {
     }) ?? null,
     [executionRecords]
   );
-
-  const latestPaperTestState = useMemo(() => {
-    if (!latestPaperTestResult) {
-      return null;
-    }
-
-    if (latestPaperTestResult.execution?.submitted) {
-      return {
-        tone: "success" as const,
-        label: formatExecutionStatus(latestPaperTestResult.execution?.status ?? "submitted"),
-        detail: "Paper order reached Alpaca paper routing successfully.",
-      };
-    }
-
-    if (latestPaperTestResult.execution?.skipped) {
-      return {
-        tone: "info" as const,
-        label: "Skipped",
-        detail: latestPaperTestResult.execution.reason ?? "Execution was intentionally skipped.",
-      };
-    }
-
-    if (
-      latestPaperTestResult.execution?.status === "position_conflict"
-    ) {
-      return {
-        tone: "info" as const,
-        label: latestPaperTestResult.execution.status,
-        detail:
-          latestPaperTestResult.execution.reason ??
-          "The paper test was handled without submitting a new order.",
-      };
-    }
-
-    if (latestPaperTestResult.execution?.status === "rejected") {
-      return {
-        tone: "error" as const,
-        label: latestPaperTestResult.execution.status,
-        detail:
-          latestPaperTestResult.execution.reason ??
-          "The paper test was blocked by execution guardrails.",
-      };
-    }
-
-    if (latestPaperTestResult.ok) {
-      return {
-        tone: "info" as const,
-        label: latestPaperTestResult.execution?.status ?? "Completed",
-        detail:
-          latestPaperTestResult.execution?.reason ??
-          "The test completed without submitting an order.",
-      };
-    }
-
-    return {
-      tone: "error" as const,
-      label: "Failed",
-      detail:
-        latestPaperTestResult.execution?.reason ??
-        "The paper test did not complete successfully.",
-    };
-  }, [latestPaperTestResult]);
 
   const writeDebugLog = (label: string, payload?: unknown) => {
     if (!isDevelopment) {
@@ -480,7 +408,6 @@ function AutomationPage() {
   const handleAlpacaConnectionTest = async () => {
     setIsTestingAlpacaConnection(true);
     setAlpacaStatusMessage(null);
-    setPaperTestNotice(null);
 
     try {
       writeDebugLog("Testing Alpaca connection");
@@ -622,90 +549,16 @@ function AutomationPage() {
 
     try {
       await navigator.clipboard.writeText(value);
-      setPaperTestNotice({ tone: "info", message: `${label} copied to clipboard.` });
+      setAlpacaStatusMessage({
+        tone: "info",
+        message: `${label} copied to clipboard.`,
+      });
     } catch (error) {
       writeDebugLog(`Copy failed for ${label}`, error);
-      setPaperTestNotice({
+      setAlpacaStatusMessage({
         tone: "error",
         message: `Unable to copy ${label.toLowerCase()} right now.`,
       });
-    }
-  };
-
-  const handleRunPaperTest = async (tradeId?: string) => {
-    setIsRunningPaperTest(true);
-    setPaperTestNotice(null);
-    setAlpacaStatusMessage(null);
-
-    try {
-      const payload = tradeId ? { tradeId } : {};
-      writeDebugLog("Running admin paper test", payload);
-      const result = await runAdminPaperExecutionTest(payload);
-      writeDebugLog("Admin paper test result", result);
-
-      setLatestPaperTestResult(result);
-      await refreshAlpacaState();
-
-      if (result.execution?.submitted) {
-        setLastSuccessfulPaperTestAt(new Date().toISOString());
-        setPaperTestNotice({ tone: "success", message: "Paper test submitted successfully." });
-        return;
-      }
-
-      if (result.execution?.skipped) {
-        setPaperTestNotice({
-          tone: "info",
-          message: result.execution.reason ?? "Paper execution was intentionally skipped.",
-        });
-        return;
-      }
-
-      if (result.execution?.status === "position_conflict") {
-        setPaperTestNotice({
-          tone: "info",
-          message: result.execution.reason ?? "Paper execution was handled without submitting a new order.",
-        });
-        return;
-      }
-
-      if (result.execution?.status === "rejected") {
-        setPaperTestNotice({
-          tone: "error",
-          message: result.execution.reason ?? "Paper execution was blocked by execution guardrails.",
-        });
-        return;
-      }
-
-      if (result.ok) {
-        setPaperTestNotice({
-          tone: "info",
-          message: result.execution?.reason ?? "Paper test completed without a submitted order.",
-        });
-        return;
-      }
-
-      setPaperTestNotice({
-        tone: "error",
-        message: result.execution?.reason ?? "Paper test did not complete successfully.",
-      });
-    } catch (error) {
-      writeDebugLog("Admin paper test error", error);
-      const message = getAutomationUiErrorMessage(
-        error,
-        "Unable to run the Alpaca paper test right now."
-      );
-      const normalizedMessage = message.toLowerCase();
-      setPaperTestNotice({
-        tone:
-          normalizedMessage.includes("admin") ||
-          normalizedMessage.includes("sign in") ||
-          normalizedMessage.includes("permission")
-            ? "info"
-            : "error",
-        message,
-      });
-    } finally {
-      setIsRunningPaperTest(false);
     }
   };
 
@@ -1159,161 +1012,6 @@ function AutomationPage() {
             </button>
           </div>
 
-          <div style={paperTestCardStyle}>
-            <div style={sectionHeaderStyle}>
-              <div>
-                <p style={eyebrowStyle}>Admin only</p>
-                <h3 style={{ margin: 0, color: "#101828" }}>Alpaca Paper Test</h3>
-                <p style={{ margin: "0.45rem 0 0", color: "#475467", maxWidth: "42rem" }}>
-                  Run a safe end-to-end paper execution test from signal validation through Alpaca
-                  order submission. This panel is paper mode only and does not place live trades.
-                </p>
-              </div>
-              {lastSuccessfulPaperTestAt ? (
-                <div style={paperMetaPillStyle}>
-                  Last successful test {formatDisplayTimestamp(lastSuccessfulPaperTestAt)}
-                </div>
-              ) : null}
-            </div>
-
-            <div style={pillRowStyle}>
-              <span style={metaPillStyle}>Admin only</span>
-              <span style={metaPillStyle}>Paper mode only</span>
-              <span style={metaPillStyle}>Does not place live trades</span>
-            </div>
-
-            {paperTestNotice ? (
-              <div style={noticeStyle(paperTestNotice.tone)}>
-                <strong>
-                  {paperTestNotice.tone === "success"
-                    ? "Success"
-                    : paperTestNotice.tone === "error"
-                      ? "Error"
-                      : "Info"}
-                </strong>
-                <p style={{ margin: 0 }}>{paperTestNotice.message}</p>
-              </div>
-            ) : null}
-
-            <div style={actionsRowStyle}>
-              <button
-                type="button"
-                onClick={() => void handleRunPaperTest()}
-                disabled={areAdminPaperActionsDisabled}
-                style={primaryButtonStyle(areAdminPaperActionsDisabled)}
-              >
-                {isRunningPaperTest ? "Running..." : "Run Paper Test"}
-              </button>
-              <button
-                type="button"
-                onClick={handleAlpacaConnectionTest}
-                disabled={areAdminPaperActionsDisabled}
-                style={secondaryButtonStyle(areAdminPaperActionsDisabled)}
-              >
-                {isTestingAlpacaConnection ? "Testing..." : "Test Alpaca Connection"}
-              </button>
-              {latestPaperTestResult?.tradeId ? (
-                <button
-                  type="button"
-                  onClick={() => void handleRunPaperTest(latestPaperTestResult.tradeId)}
-                  disabled={areAdminPaperActionsDisabled}
-                  style={secondaryButtonStyle(areAdminPaperActionsDisabled)}
-                >
-                  Re-run same trade ID
-                </button>
-              ) : null}
-            </div>
-
-            {latestPaperTestState ? (
-              <div style={paperSummaryStyle(latestPaperTestState.tone)}>
-                <div>
-                  <strong>{latestPaperTestState.label}</strong>
-                  <p style={{ margin: "0.35rem 0 0" }}>{latestPaperTestState.detail}</p>
-                </div>
-              </div>
-            ) : null}
-
-            {latestPaperTestResult ? (
-              <div style={paperResultCardStyle}>
-                <div style={sectionHeaderStyle}>
-                  <div>
-                    <strong style={{ color: "#101828" }}>Latest paper test result</strong>
-                    <p style={{ margin: "0.35rem 0 0", color: "#667085" }}>
-                      Review the latest admin paper test outcome and reuse identifiers for quick
-                      idempotency checks.
-                    </p>
-                  </div>
-                </div>
-
-                <div style={resultGridStyle}>
-                  <ResultRow label="OK" value={formatBoolean(latestPaperTestResult.ok)} />
-                  <ResultRow
-                    label="Trade ID"
-                    value={latestPaperTestResult.tradeId ?? "Not returned"}
-                    actionLabel="Copy"
-                    onAction={
-                      latestPaperTestResult.tradeId
-                        ? () => void handleCopyValue("Trade ID", latestPaperTestResult.tradeId)
-                        : undefined
-                    }
-                  />
-                  <ResultRow
-                    label="Execution ID"
-                    value={latestPaperTestResult.executionId ?? "Not returned"}
-                    actionLabel="Copy"
-                    onAction={
-                      latestPaperTestResult.executionId
-                        ? () => void handleCopyValue("Execution ID", latestPaperTestResult.executionId)
-                        : undefined
-                    }
-                  />
-                  <ResultRow
-                    label="Validation"
-                    value={formatValidation(latestPaperTestResult.validation)}
-                  />
-                  <ResultRow
-                    label="Execution status"
-                    value={latestPaperTestResult.execution?.status ?? "Not returned"}
-                  />
-                  <ResultRow
-                    label="Execution skipped"
-                    value={formatBoolean(latestPaperTestResult.execution?.skipped)}
-                  />
-                  <ResultRow
-                    label="Execution submitted"
-                    value={formatBoolean(latestPaperTestResult.execution?.submitted)}
-                  />
-                  <ResultRow
-                    label="Reason"
-                    value={latestPaperTestResult.execution?.reason ?? "Not returned"}
-                  />
-                  <ResultRow
-                    label="Alpaca order ID"
-                    value={latestPaperTestResult.execution?.alpacaOrderId ?? "Not returned"}
-                    actionLabel="Copy"
-                    onAction={
-                      latestPaperTestResult.execution?.alpacaOrderId
-                        ? () =>
-                            void handleCopyValue(
-                              "Alpaca order ID",
-                              latestPaperTestResult.execution?.alpacaOrderId ?? undefined
-                            )
-                        : undefined
-                    }
-                  />
-                  <ResultRow
-                    label="Trade created"
-                    value={formatBoolean(latestPaperTestResult.tradeCreated)}
-                  />
-                  <ResultRow
-                    label="Reused trade"
-                    value={formatBoolean(latestPaperTestResult.reusedTrade)}
-                  />
-                </div>
-              </div>
-            ) : null}
-          </div>
-
           <div style={executionPanelStyle}>
             <div style={sectionHeaderStyle}>
               <div>
@@ -1377,7 +1075,7 @@ function AutomationPage() {
                 <div style={emptyStateStyle}>
                   <strong style={{ color: "#101828" }}>No execution telemetry yet</strong>
                   <p style={{ margin: 0, color: "#667085" }}>
-                    Run a paper test or wait for the next qualifying automation event to populate this panel.
+                    Wait for the next qualifying automation event to populate this panel.
                   </p>
                 </div>
               ) : (
@@ -1522,7 +1220,7 @@ function AutomationPage() {
               type="text"
               value={formState.assetFiltersInput}
               onChange={(event) => handleFieldChange("assetFiltersInput", event.target.value)}
-              placeholder="QQQ, BTCUSD, ETHUSD"
+              placeholder="QQQ, BTCUSD"
               style={inputStyle(Boolean(errors.assetFiltersInput))}
               disabled={!isAdmin && !hasAutomationAccess}
             />
@@ -1610,29 +1308,6 @@ function OperatorMetricCard({
       <span style={operatorMetricLabelStyle}>{label}</span>
       <strong style={operatorMetricValueStyle}>{value}</strong>
       <p style={{ margin: 0, color: "#475467" }}>{detail}</p>
-      {actionLabel && onAction ? (
-        <button type="button" onClick={onAction} style={copyButtonStyle}>
-          {actionLabel}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-type ResultRowProps = {
-  label: string;
-  value: string;
-  actionLabel?: string;
-  onAction?: () => void;
-};
-
-function ResultRow({ label, value, actionLabel, onAction }: ResultRowProps) {
-  return (
-    <div style={resultRowStyle}>
-      <div>
-        <span style={resultLabelStyle}>{label}</span>
-        <strong style={resultValueStyle}>{value}</strong>
-      </div>
       {actionLabel && onAction ? (
         <button type="button" onClick={onAction} style={copyButtonStyle}>
           {actionLabel}
@@ -1794,35 +1469,6 @@ const formatExecutionStatus = (value: string) =>
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
-
-const formatBoolean = (value: boolean | undefined) => {
-  if (value === true) {
-    return "Yes";
-  }
-
-  if (value === false) {
-    return "No";
-  }
-
-  return "Not returned";
-};
-
-const formatValidation = (
-  validation: RunAdminPaperExecutionTestResponse["validation"]
-) => {
-  if (!validation) {
-    return "Not returned";
-  }
-
-  const eligibility =
-    validation.eligible === true
-      ? "Eligible"
-      : validation.eligible === false
-        ? "Not eligible"
-        : "Unknown";
-
-  return validation.reason ? `${eligibility} - ${validation.reason}` : eligibility;
-};
 
 const formatDisplayTimestamp = (isoString: string) => {
   const parsed = new Date(isoString);
@@ -2123,15 +1769,6 @@ const operatorMetricValueStyle = {
   wordBreak: "break-word" as const,
 };
 
-const paperTestCardStyle = {
-  display: "grid",
-  gap: "1rem",
-  padding: "1.15rem",
-  borderRadius: "16px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-};
-
 const alpacaDetailsGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -2235,40 +1872,6 @@ const executionActionsRowStyle = {
   flexWrap: "wrap" as const,
 };
 
-const resultGridStyle = {
-  display: "grid",
-  gap: "0.75rem",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-};
-
-const resultRowStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: "0.85rem",
-  padding: "0.9rem 1rem",
-  borderRadius: "12px",
-  border: "1px solid #eaecf0",
-  backgroundColor: "#fcfcfd",
-};
-
-const resultLabelStyle = {
-  display: "block",
-  marginBottom: "0.3rem",
-  color: "#475467",
-  fontSize: "0.8rem",
-  fontWeight: 700,
-  textTransform: "uppercase" as const,
-  letterSpacing: "0.04em",
-};
-
-const resultValueStyle = {
-  color: "#101828",
-  fontSize: "0.98rem",
-  lineHeight: 1.45,
-  wordBreak: "break-word" as const,
-};
-
 const codePreviewStyle = {
   display: "block",
   padding: "0.85rem 1rem",
@@ -2318,43 +1921,6 @@ const metaPillStyle = {
   fontSize: "0.82rem",
   fontWeight: 700,
 };
-
-const paperMetaPillStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  borderRadius: "999px",
-  padding: "0.4rem 0.75rem",
-  border: "1px solid #b7d7c5",
-  backgroundColor: "#ecfdf3",
-  color: "#027a48",
-  fontSize: "0.82rem",
-  fontWeight: 700,
-};
-
-const paperResultCardStyle = {
-  display: "grid",
-  gap: "1rem",
-  padding: "1rem",
-  borderRadius: "14px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
-};
-
-const paperSummaryStyle = (tone: "success" | "error" | "info") => ({
-  display: "grid",
-  gap: "0.35rem",
-  padding: "0.95rem 1rem",
-  borderRadius: "14px",
-  border:
-    tone === "success"
-      ? "1px solid #abefc6"
-      : tone === "error"
-        ? "1px solid #fda29b"
-        : "1px solid #b2ddff",
-  backgroundColor:
-    tone === "success" ? "#ecfdf3" : tone === "error" ? "#fef3f2" : "#eff8ff",
-  color: tone === "success" ? "#067647" : tone === "error" ? "#b42318" : "#175cd3",
-});
 
 const primaryButtonStyle = (isDisabled: boolean) => ({
   border: 0,

@@ -9,7 +9,7 @@ const DEFAULT_PAPER_BASE_URL = "https://paper-api.alpaca.markets";
 const PAPER_HOSTNAME = "paper-api.alpaca.markets";
 
 type AlpacaRequestOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   path: string;
   body?: Record<string, unknown> | null;
 };
@@ -115,6 +115,26 @@ export const getOpenPositions = async (): Promise<AlpacaPosition[]> => requestAl
   path: "/v2/positions",
 });
 
+export const getPositionBySymbol = async (symbol: string): Promise<AlpacaPosition | null> => {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+
+  if (!normalizedSymbol) {
+    throw new Error("symbol is required.");
+  }
+
+  try {
+    return await requestAlpaca<AlpacaPosition>({
+      path: `/v2/positions/${encodeURIComponent(normalizedSymbol)}`,
+    });
+  } catch (error) {
+    if (error instanceof AlpacaApiError && error.details.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
 export const createOrder = async (
   orderRequest: AlpacaOrderRequest
 ): Promise<AlpacaOrderResponse> => requestAlpaca<AlpacaOrderResponse>({
@@ -122,6 +142,27 @@ export const createOrder = async (
   path: "/v2/orders",
   body: orderRequest,
 });
+
+export const closePositionBySymbol = async (symbol: string): Promise<AlpacaOrderResponse | null> => {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+
+  if (!normalizedSymbol) {
+    throw new Error("symbol is required.");
+  }
+
+  try {
+    return await requestAlpaca<AlpacaOrderResponse>({
+      method: "DELETE",
+      path: `/v2/positions/${encodeURIComponent(normalizedSymbol)}`,
+    });
+  } catch (error) {
+    if (error instanceof AlpacaApiError && error.details.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+};
 
 export const getOrderById = async (orderId: string): Promise<AlpacaOrderResponse> => {
   const normalizedOrderId = orderId.trim();
@@ -133,4 +174,46 @@ export const getOrderById = async (orderId: string): Promise<AlpacaOrderResponse
   return requestAlpaca<AlpacaOrderResponse>({
     path: `/v2/orders/${encodeURIComponent(normalizedOrderId)}`,
   });
+};
+
+export const getOrderByClientOrderId = async (clientOrderId: string): Promise<AlpacaOrderResponse | null> => {
+  const normalizedClientOrderId = clientOrderId.trim();
+
+  if (!normalizedClientOrderId) {
+    throw new Error("clientOrderId is required.");
+  }
+
+  try {
+    return await requestAlpaca<AlpacaOrderResponse>({
+      path: `/v2/orders:by_client_order_id?client_order_id=${encodeURIComponent(normalizedClientOrderId)}`,
+    });
+  } catch (error) {
+    if (error instanceof AlpacaApiError && error.details.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+export const cancelOrderById = async (orderId: string): Promise<boolean> => {
+  const normalizedOrderId = orderId.trim();
+
+  if (!normalizedOrderId) {
+    throw new Error("orderId is required.");
+  }
+
+  try {
+    await requestAlpaca<void>({
+      method: "DELETE",
+      path: `/v2/orders/${encodeURIComponent(normalizedOrderId)}`,
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof AlpacaApiError && error.details.status === 404) {
+      return false;
+    }
+
+    throw error;
+  }
 };

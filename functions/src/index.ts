@@ -1,34 +1,40 @@
-import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getApps, initializeApp } from "firebase-admin/app";
 import { logger } from "firebase-functions";
-import { onRequest } from "firebase-functions/v2/https";
+import { onCall, onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import {
   onDocumentCreated,
   onDocumentUpdated,
 } from "firebase-functions/v2/firestore";
-import {
-  saveSignalToFirestore,
-  validateSignalPayload,
-} from "./signalIngestion.js";
-import { runAutoCloseTrades } from "./autoCloseTrades.js";
-import { closeTrade } from "./tradeClose.js";
-import { syncSignalToTrade } from "./tradeSync.js";
-import { enforceRateLimit, getRequestId, getRequestIp } from "./security/rateLimit.js";
-export { closeTradeFromWebhook } from "./webhooks/closeTradeFromWebhook.js";
-export {
-  clearFailedEmailLogin,
-  getEmailLoginAttemptStatus,
-  recordFailedEmailLogin,
-} from "./authSecurity.js";
 
-initializeApp();
+if (!getApps().length) {
+  initializeApp();
+}
+
+console.log("Functions module loaded");
 
 const signalSecret = defineSecret("SIGNAL_INGEST_SECRET");
+const closeTradeWebhookSecret = defineSecret("CLOSE_TRADE_WEBHOOK_SECRET");
+const alpacaApiKeySecret = defineSecret("ALPACA_API_KEY");
+const alpacaSecretKeySecret = defineSecret("ALPACA_SECRET_KEY");
+const googleSheetsClientEmailSecret = defineSecret("GOOGLE_SHEETS_CLIENT_EMAIL");
+const googleSheetsPrivateKeySecret = defineSecret("GOOGLE_SHEETS_PRIVATE_KEY");
 const REQUEST_RATE_LIMIT_WINDOW_MS = Number(process.env.REQUEST_RATE_LIMIT_WINDOW_MS ?? 60 * 1000);
 const SIGNAL_INGEST_RATE_LIMIT_MAX = Number(process.env.SIGNAL_INGEST_RATE_LIMIT_MAX ?? 180);
 const CLOSE_TRADE_TEST_RATE_LIMIT_MAX = Number(process.env.CLOSE_TRADE_TEST_RATE_LIMIT_MAX ?? 60);
+
+const loadFirestore = () => import("firebase-admin/firestore");
+const loadRateLimit = () => import("./security/rateLimit.js");
+const loadSignalIngestion = () => import("./signalIngestion.js");
+const loadTradeClose = () => import("./tradeClose.js");
+const loadTradeSync = () => import("./tradeSync.js");
+const loadAutoCloseTrades = () => import("./autoCloseTrades.js");
+const loadCloseTradeWebhook = () => import("./webhooks/closeTradeFromWebhook.js");
+const loadExecutionModule = () => import("./execution/index.js");
+const loadBillingModule = () => import("./billing.js");
+const loadExecutionAdminModule = () => import("./execution/admin.js");
+const loadExecutionReconcileModule = () => import("./execution/reconcile.js");
 
 export const ingestSignal = onRequest(
   {
@@ -36,6 +42,10 @@ export const ingestSignal = onRequest(
     secrets: [signalSecret],
   },
   async (request, response) => {
+    const [{ getRequestId, getRequestIp, enforceRateLimit }, { validateSignalPayload, saveSignalToFirestore }] = await Promise.all([
+      loadRateLimit(),
+      loadSignalIngestion(),
+    ]);
     const requestId = getRequestId(request);
     const clientIp = getRequestIp(request);
     logger.info("Signal ingestion request received.", {
@@ -124,6 +134,10 @@ export const autoCloseTrades = onSchedule(
     schedule: "* * * * *",
   },
   async () => {
+    const [{ getFirestore }, { runAutoCloseTrades }] = await Promise.all([
+      loadFirestore(),
+      loadAutoCloseTrades(),
+    ]);
     await runAutoCloseTrades(getFirestore());
   }
 );
@@ -134,6 +148,11 @@ export const closeTradeForTest = onRequest(
     secrets: [signalSecret],
   },
   async (request, response) => {
+    const [{ getRequestId, getRequestIp, enforceRateLimit }, { closeTrade }, { getFirestore }] = await Promise.all([
+      loadRateLimit(),
+      loadTradeClose(),
+      loadFirestore(),
+    ]);
     const requestId = getRequestId(request);
     const clientIp = getRequestIp(request);
     logger.info("Trade close test request received.", {
@@ -211,8 +230,17 @@ export const closeTradeForTest = onRequest(
 );
 
 export const createTradeFromSignal = onDocumentCreated(
-  "signals/{signalId}",
+  {
+    document: "signals/{signalId}",
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+  },
   async (event) => {
+    const [{ getFirestore }, { syncSignalToTrade }] = await Promise.all([
+      loadFirestore(),
+      loadTradeSync(),
+    ]);
     const snapshot = event.data;
     const signalId = event.params.signalId;
 
@@ -232,8 +260,17 @@ export const createTradeFromSignal = onDocumentCreated(
 );
 
 export const updateTradeFromSignal = onDocumentUpdated(
-  "signals/{signalId}",
+  {
+    document: "signals/{signalId}",
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+  },
   async (event) => {
+    const [{ getFirestore }, { syncSignalToTrade }] = await Promise.all([
+      loadFirestore(),
+      loadTradeSync(),
+    ]);
     const afterSnapshot = event.data?.after;
     const signalId = event.params.signalId;
 
@@ -252,18 +289,105 @@ export const updateTradeFromSignal = onDocumentUpdated(
   }
 );
 
-export {
-  createCheckoutSession,
-  createBillingPortalSession,
-  stripeWebhook,
-} from "./billing";
+export const closeTradeFromWebhook = onRequest(
+  {
+    cors: false,
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+    secrets: [
+      closeTradeWebhookSecret,
+      alpacaApiKeySecret,
+      alpacaSecretKeySecret,
+      googleSheetsClientEmailSecret,
+      googleSheetsPrivateKeySecret,
+    ],
+  },
+  async (request, response) => {
+    const module = await loadCloseTradeWebhook();
+    return module.closeTradeFromWebhook(request, response);
+  }
+);
+
+export const executePaperTradeFromTrade = onDocumentCreated(
+  {
+    document: "trades/{tradeId}",
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+    secrets: [alpacaApiKeySecret, alpacaSecretKeySecret],
+  },
+  async (event) => {
+    const module = await loadExecutionModule();
+    return module.handleExecutePaperTradeFromTrade(event);
+  }
+);
+
+export const createCheckoutSession = onCall({}, async (request) => {
+  const module = await loadBillingModule();
+  return module.createCheckoutSession(request as never, undefined as never);
+});
+
+export const createBillingPortalSession = onCall({}, async (request) => {
+  const module = await loadBillingModule();
+  return module.createBillingPortalSession(request as never, undefined as never);
+});
+
+export const stripeWebhook = onRequest(
+  {
+    secrets: [defineSecret("STRIPE_WEBHOOK_SECRET")],
+  },
+  async (request, response) => {
+    const module = await loadBillingModule();
+    return module.stripeWebhook(request, response);
+  }
+);
 export { saveAutomationSettings } from "./automation.js";
 export { deliverSignalToSubscribers } from "./triggers/deliverSignalToSubscribers";
 export { retryPendingWebhooks } from "./jobs/retryPendingWebhooks";
-export { executePaperTradeFromTrade } from "./execution/index.js";
+export const runAdminPaperExecutionTest = onCall({}, async (request) => {
+  const module = await loadExecutionAdminModule();
+  return module.runAdminPaperExecutionTest(request as never, undefined as never);
+});
+
 export {
-  runAdminPaperExecutionTest,
-  saveAlpacaPaperAutomationSettings,
-  testAlpacaConnection,
+  runAdminKrakenPaperCloseTest,
+  runAdminKrakenPaperExecutionTest,
+  runAdminKrakenPaperShortEntryTest,
+  runAdminKrakenPaperShortStopTest,
+  runAdminKrakenPaperShortTakeProfitTest,
+  runAdminKrakenPaperTakeProfitTest,
+  runAdminKrakenLiveRiskCheck,
+  runAdminKrakenReadOnlyTest,
 } from "./execution/admin.js";
-export { reconcileAlpacaPaperExecutions } from "./execution/reconcile.js";
+
+export const saveAlpacaPaperAutomationSettings = onCall({}, async (request) => {
+  const module = await loadExecutionAdminModule();
+  return module.saveAlpacaPaperAutomationSettings(request as never, undefined as never);
+});
+
+export const testAlpacaConnection = onCall(
+  {
+    secrets: [alpacaApiKeySecret, alpacaSecretKeySecret],
+  },
+  async (request) => {
+    const module = await loadExecutionAdminModule();
+    return module.testAlpacaConnection(request as never, undefined as never);
+  }
+);
+
+export const reconcileAlpacaPaperExecutions = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    secrets: [alpacaApiKeySecret, alpacaSecretKeySecret],
+  },
+  async (event) => {
+    const module = await loadExecutionReconcileModule();
+    return module.reconcileAlpacaPaperExecutions(event as never, undefined as never);
+  }
+);
+export {
+  clearFailedEmailLogin,
+  getEmailLoginAttemptStatus,
+  recordFailedEmailLogin,
+} from "./authSecurity.js";

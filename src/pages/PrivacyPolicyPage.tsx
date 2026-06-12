@@ -156,7 +156,7 @@ const heroStyle = {
   gap: "0.85rem",
   padding: "2rem",
   borderRadius: "24px",
-  border: "1px solid #d0d5dd",
+  border: "1px solid var(--color-hero-border)",
   background:
     "linear-gradient(135deg, rgba(16,24,40,1) 0%, rgba(29,41,57,1) 58%, rgba(71,84,103,1) 100%)",
   color: "#ffffff",
@@ -201,26 +201,26 @@ const sectionCardStyle = {
   gap: "0.85rem",
   padding: "1.5rem",
   borderRadius: "20px",
-  border: "1px solid #d0d5dd",
-  backgroundColor: "#ffffff",
+  border: "1px solid var(--color-border-strong)",
+  backgroundColor: "var(--color-surface)",
 };
 
 const sectionTitleStyle = {
   margin: 0,
-  color: "#101828",
+  color: "var(--color-text-primary)",
   fontSize: "1.35rem",
 };
 
 const bodyStyle = {
   margin: 0,
-  color: "#475467",
+  color: "var(--color-text-muted)",
   lineHeight: 1.75,
 };
 
 const listStyle = {
   margin: 0,
   paddingLeft: "1.2rem",
-  color: "#475467",
+  color: "var(--color-text-muted)",
   display: "grid",
   gap: "0.5rem",
 };

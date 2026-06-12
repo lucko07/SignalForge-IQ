@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { applyActionCode, checkActionCode, reload } from "firebase/auth";
 import { useAuth } from "../context/auth-context";
 import {
   getAuthErrorMessage,
@@ -9,6 +10,12 @@ import {
   sendCurrentUserVerificationEmail,
   signOut,
 } from "../lib/auth";
+import { auth } from "../lib/firebase";
+import {
+  getEmailActionParams,
+  getSafeRedirectTarget,
+  hasEmailActionParams,
+} from "../lib/authActionLinks";
 
 function VerifyEmailPage() {
   const navigate = useNavigate();
@@ -20,10 +27,39 @@ function VerifyEmailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const nextPath = normalizeNextPath(searchParams.get("next"));
+  const [actionStatus, setActionStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const actionHandledRef = useRef(false);
+  const redirectTimeoutRef = useRef<number | null>(null);
+  const currentHref = typeof window === "undefined"
+    ? "https://signalforgeiq.com/verify-email"
+    : window.location.href;
+  const actionParams = getEmailActionParams(currentHref);
+  const hasActionRequest = hasEmailActionParams(actionParams);
+  const nextPath = getSafeRedirectTarget({
+    next: searchParams.get("next"),
+    continueUrl: searchParams.get("continueUrl"),
+  });
+  const actionRedirectPath = getSafeRedirectTarget({
+    next: actionParams.next,
+    continueUrl: actionParams.continueUrl,
+  });
   const mode = searchParams.get("mode");
 
   useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current !== null) {
+        window.clearTimeout(redirectTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasActionRequest) {
+      return;
+    }
+
     if (loading) {
       return;
     }
@@ -36,11 +72,89 @@ function VerifyEmailPage() {
     if (isEmailVerified) {
       navigate(nextPath, { replace: true });
     }
-  }, [currentUser, isEmailVerified, loading, navigate, nextPath]);
+  }, [currentUser, hasActionRequest, isEmailVerified, loading, navigate, nextPath]);
+
+  useEffect(() => {
+    if (!hasActionRequest || actionHandledRef.current) {
+      return;
+    }
+
+    actionHandledRef.current = true;
+
+    if (actionParams.normalizedMode !== "verifyEmail") {
+      setActionStatus("error");
+      setActionError("This verification link is not supported. Request a new verification email and try again.");
+      return;
+    }
+
+    if (!actionParams.oobCode) {
+      setActionStatus("error");
+      setActionError("This verification link is invalid or has expired.");
+      return;
+    }
+
+    let isCancelled = false;
+
+    const verifyEmailAction = async () => {
+      setActionStatus("loading");
+      setActionMessage("Verifying your email...");
+      setActionError("");
+
+      try {
+        await checkActionCode(auth, actionParams.oobCode as string);
+        await applyActionCode(auth, actionParams.oobCode as string);
+
+        if (auth.currentUser) {
+          await reload(auth.currentUser);
+        }
+
+        await refreshAuthState().catch(() => undefined);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setActionStatus("success");
+        setActionMessage("Your email has been verified. Redirecting to your dashboard...");
+        redirectTimeoutRef.current = window.setTimeout(() => {
+          navigate(actionRedirectPath, { replace: true });
+        }, 1400);
+      } catch (verificationError) {
+        const details = verificationError as { code?: unknown; message?: unknown };
+        console.error("[verify-email] action failed", {
+          code: typeof details.code === "string" ? details.code : undefined,
+          message: typeof details.message === "string" ? details.message : String(verificationError),
+          mode: actionParams.mode,
+        });
+
+        if (isCancelled) {
+          return;
+        }
+
+        setActionStatus("error");
+        setActionError(getEmailActionErrorMessage(verificationError));
+      }
+    };
+
+    void verifyEmailAction();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    actionParams.mode,
+    actionParams.normalizedMode,
+    actionParams.oobCode,
+    actionRedirectPath,
+    hasActionRequest,
+    navigate,
+    refreshAuthState,
+  ]);
 
   const handleResend = async () => {
     setError("");
     setMessage("");
+    setActionError("");
     setIsResending(true);
 
     try {
@@ -51,6 +165,10 @@ function VerifyEmailPage() {
     } finally {
       setIsResending(false);
     }
+  };
+
+  const handleReturnToVerificationGate = () => {
+    navigate(`/verify-email?next=${encodeURIComponent(actionRedirectPath)}`, { replace: true });
   };
 
   const handleRefresh = async () => {
@@ -109,6 +227,63 @@ function VerifyEmailPage() {
     }
   };
 
+  if (hasActionRequest) {
+    return (
+      <section style={pageStyle}>
+        <div style={heroStyle}>
+          <p style={eyebrowStyle}>SignalForge IQ</p>
+          <h1 style={titleStyle}>Email verification</h1>
+          <p style={bodyStyle}>
+            We&apos;re confirming your email so you can continue into your account securely.
+          </p>
+        </div>
+
+        <div style={cardStyle}>
+          {actionStatus === "loading" || actionStatus === "idle" ? (
+            <div style={statusBlockStyle}>
+              <p style={statusTitleStyle}>Verifying your email...</p>
+              <p style={statusBodyStyle}>
+                {actionMessage || "Please wait while we confirm your access and prepare your next step."}
+              </p>
+            </div>
+          ) : null}
+
+          {actionStatus === "success" ? (
+            <div style={successNoticeStyle}>
+              <p style={statusTitleStyle}>Your email has been verified.</p>
+              <p style={statusBodyStyle}>
+                {actionMessage || "Redirecting to your dashboard..."}
+              </p>
+            </div>
+          ) : null}
+
+          {actionMessage && actionStatus === "error" ? (
+            <p style={successBannerStyle}>{actionMessage}</p>
+          ) : null}
+
+          {actionStatus === "error" ? (
+            <>
+              <p style={errorBannerStyle}>{actionError}</p>
+              <div style={actionsGridStyle}>
+                <button
+                  type="button"
+                  onClick={currentUser ? handleResend : handleReturnToVerificationGate}
+                  disabled={isResending}
+                  style={primaryButtonStyle(isResending)}
+                >
+                  {isResending ? "Sending..." : "Resend verification email"}
+                </button>
+                <Link to={`/login?next=${encodeURIComponent(actionRedirectPath)}`} style={linkButtonStyle}>
+                  Back to login
+                </Link>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
   if (loading) {
     return <section style={{ maxWidth: "720px", margin: "0 auto" }}>Checking your account...</section>;
   }
@@ -133,7 +308,7 @@ function VerifyEmailPage() {
         <div style={noticeStyle}>
           <strong style={{ color: "#101828" }}>What to do next</strong>
           <p style={{ margin: 0, color: "#475467", lineHeight: 1.7 }}>
-            Open the verification email from Firebase Auth, confirm your address, then return here and refresh your status.
+            Check your inbox for the verification email, confirm your address, then return here and refresh your status.
           </p>
         </div>
 
@@ -175,16 +350,20 @@ const getInitialMessage = (sentFlag: string | null) => {
   return "";
 };
 
-const normalizeNextPath = (value: string | null) => {
-  if (!value || !value.startsWith("/")) {
-    return "/dashboard";
-  }
+const getEmailActionErrorMessage = (error: unknown) => {
+  const code = (error as { code?: string } | undefined)?.code;
 
-  if (value === "/verify-email") {
-    return "/dashboard";
+  switch (code) {
+    case "auth/expired-action-code":
+    case "auth/invalid-action-code":
+      return "This verification link is invalid or has expired.";
+    case "auth/user-disabled":
+      return "This account is currently unavailable. Please contact support if you need help.";
+    case "auth/user-not-found":
+      return "We could not find the account for this verification link.";
+    default:
+      return "We couldn't complete email verification right now. Request a new verification email and try again.";
   }
-
-  return value;
 };
 
 const pageStyle = {
@@ -247,6 +426,37 @@ const noticeStyle = {
   border: "1px solid #eaecf0",
 };
 
+const statusBlockStyle = {
+  display: "grid",
+  gap: "0.5rem",
+  padding: "1.25rem",
+  borderRadius: "16px",
+  border: "1px solid #eaecf0",
+  backgroundColor: "#f8fafc",
+};
+
+const successNoticeStyle = {
+  display: "grid",
+  gap: "0.5rem",
+  padding: "1.25rem",
+  borderRadius: "16px",
+  border: "1px solid #abefc6",
+  backgroundColor: "#ecfdf3",
+};
+
+const statusTitleStyle = {
+  margin: 0,
+  color: "#101828",
+  fontSize: "1.05rem",
+  fontWeight: 700,
+};
+
+const statusBodyStyle = {
+  margin: 0,
+  color: "#475467",
+  lineHeight: 1.7,
+};
+
 const actionsGridStyle = {
   display: "grid",
   gap: "0.75rem",
@@ -291,6 +501,19 @@ const successBannerStyle = {
 const inlineLinkStyle = {
   color: "#101828",
   fontWeight: 700,
+};
+
+const linkButtonStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "1px solid #d0d5dd",
+  borderRadius: "12px",
+  padding: "0.95rem 1rem",
+  backgroundColor: "#ffffff",
+  color: "#344054",
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 export default VerifyEmailPage;
